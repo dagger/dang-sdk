@@ -1,0 +1,5 @@
+type LookupApp {
+  pub hello: String! {
+    "lookup"
+  }
+}

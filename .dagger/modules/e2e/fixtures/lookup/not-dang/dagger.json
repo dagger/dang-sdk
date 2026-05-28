@@ -1,0 +1,7 @@
+{
+  "name": "not-dang",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}

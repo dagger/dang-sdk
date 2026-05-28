@@ -1,0 +1,17 @@
+{
+  "name": "deps-app",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "dang"
+  },
+  "dependencies": [
+    "../dep-string",
+    {
+      "name": "dep-named",
+      "source": "../dep-named"
+    },
+    {
+      "source": "../dep-source-only"
+    }
+  ]
+}

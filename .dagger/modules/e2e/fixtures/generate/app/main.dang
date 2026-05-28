@@ -1,0 +1,5 @@
+type GenerateApp {
+  pub hello: String! {
+    "generate"
+  }
+}

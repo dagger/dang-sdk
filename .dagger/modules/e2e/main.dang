@@ -1,0 +1,210 @@
+"""
+End-to-end checks for the Dang SDK helper module.
+"""
+type E2e {
+  let fixtureRoot: String! = ".dagger/modules/e2e/fixtures"
+  let outputRoot: String! = ".dagger/modules/e2e/out"
+
+  let lookupModulePath: String! = fixtureRoot + "/lookup/app"
+  let lookupNestedPath: String! = lookupModulePath + "/nested"
+  let nonDangModulePath: String! = fixtureRoot + "/lookup/not-dang"
+  let skipModulePath: String! = fixtureRoot + "/skip/app"
+  let generateModulePath: String! = fixtureRoot + "/generate/app"
+  let depsModulePath: String! = fixtureRoot + "/deps/app"
+
+  """
+  Fail the current check when a condition is false.
+  """
+  let assert(condition: Boolean!, message: String!): Void {
+    if (condition == false) {
+      raise message
+    }
+    null
+  }
+
+  """
+  Return true when a list contains the exact string.
+  """
+  let contains(values: [String!]!, want: String!): Boolean! {
+    values
+      .filter { value => value == want }
+      .length > 0
+  }
+
+  """
+  Assert that a changeset added a path.
+  """
+  let assertAdded(changes: Changeset!, path: String!): Void {
+    assert(contains(changes.addedPaths, path), "expected added path: " + path)
+  }
+
+  """
+  Assert that a string contains a substring.
+  """
+  let assertContains(value: String!, want: String!, message: String!): Void {
+    assert(value.contains(want), message)
+  }
+
+  """
+  Assert that a string does not contain a substring.
+  """
+  let assertNotContains(value: String!, want: String!, message: String!): Void {
+    assert(value.contains(want) == false, message)
+  }
+
+  """
+  Assert that a dependency edit modified only dagger.json.
+  """
+  let assertOnlyConfigChanged(changes: Changeset!, path: String!): Void {
+    assert(contains(changes.modifiedPaths, path), "dependency edit did not modify dagger.json")
+    assert(changes.modifiedPaths.length == 1, "dependency edit modified more than dagger.json")
+    assert(changes.addedPaths.length == 0, "dependency edit should not add generated files")
+    assert(changes.removedPaths.length == 0, "dependency edit should not remove generated files")
+  }
+
+  """
+  The helper should expose the generate skip marker used by callers.
+  """
+  pub skipGenerateFilenameCheck: Void @check {
+    assert(dangSdk.skipGenerateFilename == ".dagger-dang-sdk-skip-generate", "skip marker filename changed")
+
+    null
+  }
+
+  """
+  Mod lookup should find the owning Dang SDK module when called from a nested path.
+  """
+  pub moduleLookupCheck(ws: Workspace!): Void @check {
+    let nested = dangSdk.mod(ws, path: lookupNestedPath)
+    let exact = dangSdk.mod(ws, path: lookupModulePath, findUp: false)
+
+    assert(nested.path == lookupModulePath, "find-up lookup returned the wrong module path")
+    assert(exact.path == lookupModulePath, "exact lookup returned the wrong module path")
+
+    null
+  }
+
+  """
+  Init should produce only the seed files and the requested generated-file policy.
+  """
+  pub initCheck(ws: Workspace!): Void @check {
+    let defaultPath = outputRoot + "/init-default"
+    let ignoredPath = outputRoot + "/init-ignore-generated"
+
+    let defaultChanges = dangSdk.init(ws, name: "init-default", path: defaultPath)
+    let ignoredChanges = dangSdk.init(ws, name: "init-ignore-generated", path: ignoredPath, ignoreGenerated: true)
+
+    assertAdded(defaultChanges, defaultPath + "/dagger.json")
+    assertAdded(defaultChanges, defaultPath + "/main.dang")
+    assert(defaultChanges.modifiedPaths.length == 0, "init unexpectedly modified existing files")
+    assert(defaultChanges.removedPaths.length == 0, "init unexpectedly removed files")
+    assertContains(defaultChanges.layer.file(defaultPath + "/dagger.json").contents, "\"automaticGitignore\": false", "default init should check in generated files")
+    assertContains(defaultChanges.layer.file(defaultPath + "/main.dang").contents, "type InitDefault {", "minimal template did not render the module type")
+
+    assertContains(ignoredChanges.layer.file(ignoredPath + "/dagger.json").contents, "\"automaticGitignore\": true", "ignoreGenerated init should configure automatic .gitignore output")
+
+    null
+  }
+
+  """
+  Generating an existing generated-clean Dang module should not produce
+  language-side files today.
+  """
+  pub generateCheck(ws: Workspace!): Void @check {
+    let changes = dangSdk.mod(ws, path: generateModulePath).generate(ws)
+
+    assert(changes.isEmpty, "Dang generation should be empty")
+
+    null
+  }
+
+  """
+  Generating all modules should discover Dang SDK modules and ignore skipped ones.
+  """
+  pub generateAllCheck(ws: Workspace!): Void @check {
+    let changes = dangSdk.generateAll(ws)
+
+    assert(changes.isEmpty, "Dang generateAll should be empty")
+    assert(contains(changes.addedPaths, nonDangModulePath + "/main.dang") == false, "generateAll generated a non-Dang SDK module")
+
+    null
+  }
+
+  """
+  A skip marker above a module should make generate return an empty changeset.
+  """
+  pub skipGenerateCheck(ws: Workspace!): Void @check {
+    let mod = dangSdk.mod(ws, path: skipModulePath)
+    let changes = mod.generate(ws)
+
+    assert(mod.skipGenerate(ws), "skip marker was not detected")
+    assert(changes.isEmpty, "generate returned changes for a skipped module")
+
+    null
+  }
+
+  """
+  Engine version helpers should read dagger.json and write normalized versions.
+  """
+  pub engineVersionCheck(ws: Workspace!): Void @check {
+    let engine = dangSdk.mod(ws, path: lookupModulePath).engine
+    let fixed = engine.require(version: "0.21.0")
+    let latest = engine.requireLatest
+
+    assert(engine.required == "0.20.8", "engine.required should trim a leading v")
+    assertContains(fixed.layer.file(lookupModulePath + "/dagger.json").contents, "\"engineVersion\": \"v0.21.0\"", "engine.require should write a normalized version")
+    assertContains(latest.layer.file(lookupModulePath + "/dagger.json").contents, "\"engineVersion\": \"latest\"", "engine.requireLatest should write latest")
+
+    null
+  }
+
+  """
+  Dependency listing should preserve how users identify dependencies: string
+  entries return their source, named object entries return their name.
+  """
+  pub dependencyListCheck(ws: Workspace!): Void @check {
+    let deps = dangSdk.mod(ws, path: depsModulePath).deps.list
+
+    assert(contains(deps, "../dep-string"), "string dependency source was not listed")
+    assert(contains(deps, "dep-named"), "named dependency was not listed")
+    assert(contains(deps, "../dep-source-only"), "source-only dependency was not listed by source")
+
+    null
+  }
+
+  """
+  Dependency edits should update only dagger.json. Users run generate
+  separately when they want generated SDK files refreshed.
+  """
+  pub dependencyEditCheck(ws: Workspace!): Void @check {
+    let deps = dangSdk.mod(ws, path: depsModulePath).deps
+
+    let added = deps.add(source: "../dep-new")
+    assertOnlyConfigChanged(added, depsModulePath + "/dagger.json")
+    let addedConfig = added.after.file(depsModulePath + "/dagger.json").contents
+    assertContains(addedConfig, "\"../dep-new\"", "adding an unnamed dependency did not keep its source")
+    assertNotContains(addedConfig, "\"name\": \"dep-new\"", "adding an unnamed dependency should not load the module to discover its name")
+
+    let named = deps.add(source: "../dep-new", name: "dep-alias")
+    assertOnlyConfigChanged(named, depsModulePath + "/dagger.json")
+    let namedConfig = named.after.file(depsModulePath + "/dagger.json").contents
+    assertContains(namedConfig, "\"name\": \"dep-alias\"", "adding a named dependency did not keep the requested name")
+    assertContains(namedConfig, "\"source\": \"../dep-new\"", "adding a named dependency did not keep its relative source")
+
+    let removed = deps.remove(name: "dep-named")
+    assertOnlyConfigChanged(removed, depsModulePath + "/dagger.json")
+    let removedConfig = removed.after.file(depsModulePath + "/dagger.json").contents
+    assertNotContains(removedConfig, "\"name\": \"dep-named\"", "removing a named dependency left it in dagger.json")
+
+    let sourceRemoved = deps.remove(name: "../dep-source-only")
+    assertOnlyConfigChanged(sourceRemoved, depsModulePath + "/dagger.json")
+    let sourceRemovedConfig = sourceRemoved.after.file(depsModulePath + "/dagger.json").contents
+    assertNotContains(sourceRemovedConfig, "\"source\": \"../dep-source-only\"", "removing by source left the dependency in dagger.json")
+    assertContains(sourceRemovedConfig, "\"name\": \"dep-named\"", "removing by source removed a different dependency")
+
+    let updated = deps.update
+    assert(updated.isEmpty, "updating only local dependencies should not edit dagger.json")
+
+    null
+  }
+}

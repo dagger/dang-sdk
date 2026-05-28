@@ -1,0 +1,42 @@
+"""
+Required Dagger engine version for a Dang SDK module.
+"""
+type ModEngine {
+  """
+  Workspace-relative path of the module root.
+  """
+  let path: String!
+
+  """
+  Workspace containing this module.
+  """
+  let ws: Workspace!
+
+  """
+  The Dagger engine version required by this module, without a leading "v".
+  """
+  pub required: String! {
+    polyfill.workspace(ws).moduleSource(path).config.requiredEngineVersion
+  }
+
+  """
+  Configure this module to require the given Dagger engine version.
+  """
+  pub require(version: String!): Changeset! {
+    polyfill.workspace(ws).moduleSource(path).config.withRequiredEngineVersion(version).fork.changes
+  }
+
+  """
+  Configure this module to require the current Dagger engine version.
+  """
+  pub requireCurrent: Changeset! {
+    polyfill.workspace(ws).moduleSource(path).config.withCurrentEngineVersion.fork.changes
+  }
+
+  """
+  Configure this module to require the latest stable Dagger engine version.
+  """
+  pub requireLatest: Changeset! {
+    polyfill.workspace(ws).moduleSource(path).config.withLatestEngineVersion.fork.changes
+  }
+}

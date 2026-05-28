@@ -1,0 +1,5 @@
+type DepString {
+  pub hello: String! {
+    "dep string"
+  }
+}
