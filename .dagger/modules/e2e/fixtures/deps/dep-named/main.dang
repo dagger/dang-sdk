@@ -1,0 +1,5 @@
+type DepNamed {
+  pub hello: String! {
+    "dep named"
+  }
+}

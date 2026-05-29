@@ -1,0 +1,5 @@
+type DepsApp {
+  pub hello: String! {
+    "deps"
+  }
+}

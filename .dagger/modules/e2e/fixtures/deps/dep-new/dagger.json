@@ -1,0 +1,7 @@
+{
+  "name": "dep-new",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "dang"
+  }
+}

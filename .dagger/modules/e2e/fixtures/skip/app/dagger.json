@@ -1,0 +1,7 @@
+{
+  "name": "skip-app",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "dang"
+  }
+}

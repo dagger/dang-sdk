@@ -1,0 +1,5 @@
+type DepSourceOnly {
+  pub hello: String! {
+    "dep source only"
+  }
+}

@@ -1,0 +1,189 @@
+"""
+Manage Dagger modules that use the built-in Dang SDK.
+"""
+type DangSdk {
+  """
+  Marker filename that skips generate when found at or above a Dang SDK module root.
+  """
+  pub skipGenerateFilename: String! = ".dagger-dang-sdk-skip-generate"
+
+  """
+  Return every Dagger module whose sdk.source is "dang".
+  """
+  pub modules(ws: Workspace!): [Mod!]! {
+    ws
+      .directory("/", include: ["**/dagger.json"])
+      .search(
+        pattern: "\"sdk\"\\s*:\\s*\\{[^}]*\"source\"\\s*:\\s*\"dang\"",
+        globs: ["**/dagger.json"],
+        filesOnly: true,
+        multiline: true,
+        dotall: true,
+      )
+      .{filePath}
+      .map { configPath =>
+        mod(
+          ws,
+          if (configPath.filePath == "dagger.json") { "." } else { configPath.filePath.trimSuffix("/dagger.json") },
+          findUp: false,
+        )
+      }
+  }
+
+  """
+  Return init templates tracked by this module.
+
+  Templates live under templates/<name> and are materialized into the new
+  module. Passing an empty template to init uses the module default.
+  """
+  pub templates: [Template!]! {
+    if (currentModule.source.exists("templates")) {
+      let root = currentModule.source.directory("templates")
+      root.entries.map { name =>
+        Template(
+          name: name.trimSuffix("/"),
+          source: root.directory(name),
+        )
+      }
+    } else {
+      directory.entries.map { name =>
+        Template(
+          name: name,
+          source: directory,
+        )
+      }
+    }
+  }
+
+  """
+  Return the Dang SDK module at or above a workspace path.
+
+  When `findUp` is true, `path` may point inside the module.
+  """
+  pub mod(ws: Workspace!, path: String! = ".", findUp: Boolean! = true): Mod! {
+    let modPath = if (findUp) {
+      let foundConfigPath = ws.findUp("dagger.json", path)
+      if (foundConfigPath == null) {
+        raise "no Dagger module found containing path: " + path
+      } else {
+        let configPath = foundConfigPath.trimPrefix("/")
+        if (
+          ws
+            .directory("/", include: [configPath])
+            .file(configPath)
+            .search(
+              pattern: "\"sdk\"\\s*:\\s*\\{[^}]*\"source\"\\s*:\\s*\"dang\"",
+              multiline: true,
+              dotall: true,
+              limit: 1,
+            )
+            .{id}
+            .length == 0
+        ) {
+          raise "Dagger module does not use the Dang SDK: " + path
+        } else if (configPath == "dagger.json") {
+          "."
+        } else {
+          configPath.trimSuffix("/dagger.json")
+        }
+      }
+    } else {
+      path.trimPrefix("/")
+    }
+
+    Mod(
+      path: modPath,
+      ws: ws,
+      skipGenerateFilename: skipGenerateFilename,
+    )
+  }
+
+  """
+  Create a new Dang SDK Dagger module and return the files to write.
+
+  By default, the new module is created under the nearest `.dagger` directory
+  visible from the current workspace path:
+
+    <nearest .dagger>/modules/<name>
+
+  Pass `path` to choose a different module location. The target path must not
+  already contain a Dagger module.
+
+  Pass `template` to materialize files from templates/<template>. The empty
+  default uses this module's minimal template.
+
+  By default, future generated SDK files are checked into version control. Pass
+  `ignoreGenerated` to configure generation to add generated SDK paths to
+  .gitignore instead.
+  """
+  pub init(ws: Workspace!, name: String!, path: String! = "", template: String! = "", ignoreGenerated: Boolean! = false): Changeset! {
+    let rawPath = if (path == "") {
+      let daggerDir = ws.findUp(".dagger", ".")
+      if (daggerDir == null) {
+        ".dagger/modules/" + name
+      } else {
+        daggerDir.trimPrefix("/") + "/modules/" + name
+      }
+    } else {
+      path.trimPrefix("./").trimPrefix("/")
+    }
+
+    let modPath = if (rawPath == "" or rawPath == ".") {
+      "."
+    } else if (rawPath == ".." or rawPath.trimPrefix("../") != rawPath) {
+      raise "path escapes workspace: " + rawPath
+    } else {
+      rawPath.trimSuffix("/")
+    }
+
+    let configPath = if (modPath == ".") { "dagger.json" } else { modPath + "/dagger.json" }
+    let selectedTemplate = if (template == "") { "minimal" } else { template }
+    let fork = polyfill.workspace(ws).fork
+
+    if (ws.directory("/", include: [configPath]).exists(configPath)) {
+      raise "module already exists: " + modPath
+    } else if (currentModule.source.exists("templates/" + selectedTemplate) == false) {
+      raise "unknown init template: " + template
+    } else {
+      let config = "{\n  \"name\": " + toJSON(name) + ",\n  \"engineVersion\": \"latest\",\n  \"sdk\": {\n    \"source\": \"dang\"\n  },\n  \"codegen\": {\n    \"automaticGitignore\": " + toJSON(ignoreGenerated) + "\n  }\n}\n"
+      let templateSource = renderedTemplate(name, selectedTemplate)
+      let seeded = fork
+        .withDirectory(modPath, templateSource)
+        .withNewFile(configPath, config)
+
+      seeded.changes
+    }
+  }
+
+  """
+  Render a Dang template with the requested module name.
+  """
+  let renderedTemplate(name: String!, templateName: String!): Directory! {
+    container
+      .from("golang:1.25-alpine")
+      .withoutEntrypoint
+      .withMountedCache("/go/pkg/mod", cacheVolume("go-mod"))
+      .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
+      .withDirectory("/helper", currentModule.source.directory("helpers/render-template"))
+      .withDirectory("/template", currentModule.source.directory("templates/" + templateName))
+      .withWorkdir("/helper")
+      .withExec(["go", "build", "-o", "/usr/local/bin/render-template", "."])
+      .withExec(["render-template", name, "/template", "/rendered"])
+      .directory("/rendered")
+  }
+
+  """
+  Generate all discovered Dang SDK modules.
+  Modules with the generate skip marker are skipped.
+  """
+  pub generateAll(ws: Workspace!): Changeset! @generate {
+    let pws = polyfill.workspace(ws)
+
+    modules(ws)
+      .filter { mod => mod.skipGenerate(ws) == false }
+      .reduce(pws.fork) { fork, mod =>
+        fork.merge(pws.moduleSource(mod.path).generate)
+      }
+      .changes
+  }
+}

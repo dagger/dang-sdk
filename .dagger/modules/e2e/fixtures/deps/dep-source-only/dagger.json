@@ -1,0 +1,7 @@
+{
+  "name": "dep-source-only",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "dang"
+  }
+}
