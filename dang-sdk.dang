@@ -116,7 +116,7 @@ type DangSdk {
   `ignoreGenerated` to configure generation to add generated SDK paths to
   .gitignore instead.
   """
-  pub init(ws: Workspace!, name: String!, path: String! = "", template: String! = "", ignoreGenerated: Boolean! = false): Changeset! {
+  pub initModule(ws: Workspace!, name: String!, path: String! = "", template: String! = "", ignoreGenerated: Boolean! = false): Changeset! {
     let rawPath = if (path == "") {
       let daggerDir = ws.findUp(".dagger", ".")
       if (daggerDir == null) {
