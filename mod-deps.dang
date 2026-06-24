@@ -16,21 +16,21 @@ type ModDeps {
   Return dependency names when present, otherwise dependency sources.
   """
   pub list: [String!]! {
-    polyfill.workspace(ws).moduleSource(path).config.dependencies
+    polyfill.workspace(ws).moduleSource("/" + path).config.dependencies
   }
 
   """
   Add a Dagger dependency to dagger.json.
   """
   pub add(source: String!, name: String! = ""): Changeset! {
-    polyfill.workspace(ws).moduleSource(path).config.withDependency(source, name).fork.changes
+    polyfill.workspace(ws).moduleSource("/" + path).config.withDependency(source, name).fork.changes
   }
 
   """
   Remove a Dagger dependency from dagger.json by name or source.
   """
   pub remove(name: String!): Changeset! {
-    polyfill.workspace(ws).moduleSource(path).config.withoutDependency(name).fork.changes
+    polyfill.workspace(ws).moduleSource("/" + path).config.withoutDependency(name).fork.changes
   }
 
   """
@@ -38,6 +38,6 @@ type ModDeps {
   dagger.json.
   """
   pub update(name: String! = ""): Changeset! {
-    polyfill.workspace(ws).moduleSource(path).config.withUpdatedDependencies(name).fork.changes
+    polyfill.workspace(ws).moduleSource("/" + path).config.withUpdatedDependencies(name).fork.changes
   }
 }
