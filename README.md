@@ -2,9 +2,9 @@
 
 A Dagger module for managing Dagger modules that use the built-in Dang SDK.
 
-The Dagger CLI ships without built-in module-management commands like `init`
-or `develop`. Those operations live in SDK-specific modules like this one,
-called through `dagger call`.
+It powers `dagger module init dang` and exposes the remaining
+module-management operations (generate, dependencies, engine version) through
+`dagger call`.
 
 Backed by [`github.com/dagger/sdk-sdk/polyfill`](https://github.com/dagger/sdk-sdk/tree/main/polyfill).
 
@@ -23,19 +23,21 @@ before writing anything to your workspace.
 
 ## Create A New Module
 
-Create a Dang SDK module under the nearest `.dagger/modules/<name>/`:
+Install this module as the `dang` SDK, then create a module with the CLI:
 
 ```sh
-dagger call dang-sdk init --name my-module
+dagger sdk install dang
+dagger module init dang my-module
 ```
 
-Pick a different location:
+By default the module is created under `.dagger/modules/<name>/`. Pick a
+different location with `--path`:
 
 ```sh
-dagger call dang-sdk init --name my-module --path some/dir/my-module
+dagger module init dang my-module --path some/dir/my-module
 ```
 
-`init` only seeds template files. Run `mod ... generate` to refresh generated
+`module init` seeds template files. Run `mod ... generate` to refresh generated
 SDK files when generation produces any.
 
 ## Generate SDK Files
