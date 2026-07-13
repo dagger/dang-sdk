@@ -85,23 +85,33 @@ type E2e {
   }
 
   """
-  Init should produce only the seed files and the requested generated-file policy.
+  targetRuntime should delegate execution to the engine's built-in dang runtime,
+  not to this management module.
   """
-  pub initCheck(ws: Workspace!): Void @check {
-    let defaultPath = outputRoot + "/init-default"
-    let ignoredPath = outputRoot + "/init-ignore-generated"
+  pub targetRuntimeCheck: Void @check {
+    assert(dangSdk.targetRuntime == "dang", "targetRuntime should be the built-in dang runtime")
 
-    let defaultChanges = dangSdk.init(ws, name: "init-default", path: defaultPath)
-    let ignoredChanges = dangSdk.init(ws, name: "init-ignore-generated", path: ignoredPath, ignoreGenerated: true)
+    null
+  }
 
-    assertAdded(defaultChanges, defaultPath + "/dagger.json")
-    assertAdded(defaultChanges, defaultPath + "/main.dang")
-    assert(defaultChanges.modifiedPaths.length == 0, "init unexpectedly modified existing files")
-    assert(defaultChanges.removedPaths.length == 0, "init unexpectedly removed files")
-    assertContains(defaultChanges.layer.file(defaultPath + "/dagger.json").contents, "\"automaticGitignore\": false", "default init should check in generated files")
-    assertContains(defaultChanges.layer.file(defaultPath + "/main.dang").contents, "type InitDefault {", "minimal template did not render the module type")
+  """
+  initModule should seed only the starter source under path. The engine owns the
+  config files, so initModule must not write dagger.json, dagger.toml, or
+  dagger-module.toml.
+  """
+  pub initModuleCheck(ws: Workspace!): Void @check {
+    let modulePath = outputRoot + "/init-module"
+    let changes = dangSdk.initModule(ws, name: "init-module", path: modulePath)
+    let mainPath = modulePath + "/main.dang"
 
-    assertContains(ignoredChanges.layer.file(ignoredPath + "/dagger.json").contents, "\"automaticGitignore\": true", "ignoreGenerated init should configure automatic .gitignore output")
+    assertAdded(changes, mainPath)
+    assertContains(changes.layer.file(mainPath).contents, "type InitModule {", "minimal template did not render the module type")
+
+    let addedFiles = changes.addedPaths.filter { p => p.trimSuffix("/") == p }
+    assert(addedFiles.length == 1, "initModule should add only the starter source; the engine owns the config files")
+
+    assert(changes.modifiedPaths.length == 0, "initModule unexpectedly modified existing files")
+    assert(changes.removedPaths.length == 0, "initModule unexpectedly removed files")
 
     null
   }

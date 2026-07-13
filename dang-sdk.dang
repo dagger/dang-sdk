@@ -99,59 +99,33 @@ type DangSdk {
   }
 
   """
-  Create a new Dang SDK Dagger module and return the files to write.
+  Engine runtime recorded for modules created with this SDK.
 
-  By default, the new module is created under the nearest `.dagger` directory
-  visible from the current workspace path:
-
-    <nearest .dagger>/modules/<name>
-
-  Pass `path` to choose a different module location. The target path must not
-  already contain a Dagger module.
-
-  Pass `template` to materialize files from templates/<template>. The empty
-  default uses this module's minimal template.
-
-  By default, future generated SDK files are checked into version control. Pass
-  `ignoreGenerated` to configure generation to add generated SDK paths to
-  .gitignore instead.
+  The Dang runtime lives in the engine, so modules initialized through
+  `dagger module init dang` run on the built-in "dang" runtime rather than on
+  this management module.
   """
-  pub init(ws: Workspace!, name: String!, path: String! = "", template: String! = "", ignoreGenerated: Boolean! = false): Changeset! {
-    let rawPath = if (path == "") {
-      let daggerDir = ws.findUp(".dagger", ".")
-      if (daggerDir == null) {
-        ".dagger/modules/" + name
-      } else {
-        daggerDir.trimPrefix("/") + "/modules/" + name
-      }
-    } else {
-      path.trimPrefix("./").trimPrefix("/")
-    }
+  pub targetRuntime: String! {
+    "dang"
+  }
 
-    let modPath = if (rawPath == "" or rawPath == ".") {
-      "."
-    } else if (rawPath == ".." or rawPath.trimPrefix("../") != rawPath) {
-      raise "path escapes workspace: " + rawPath
-    } else {
-      rawPath.trimSuffix("/")
-    }
+  """
+  Scaffold a new Dang module for `dagger module init dang <name>`.
 
-    let configPath = if (modPath == ".") { "dagger.json" } else { modPath + "/dagger.json" }
+  The engine owns and writes the config files (dagger.toml, dagger-module.toml),
+  so this returns only the starter source under `path`. `template` selects a
+  templates/<template> directory; the empty default uses the minimal template.
+  """
+  pub initModule(ws: Workspace!, name: String!, path: String!, template: String! = ""): Changeset! {
+    let modPath = if (path == "" or path == ".") { "." } else { path.trimSuffix("/") }
     let selectedTemplate = if (template == "") { "minimal" } else { template }
-    let fork = polyfill.workspace(ws).fork
 
-    if (ws.directory("/", include: [configPath]).exists(configPath)) {
-      raise "module already exists: " + modPath
-    } else if (currentModule.source.exists("templates/" + selectedTemplate) == false) {
+    if (currentModule.source.exists("templates/" + selectedTemplate) == false) {
       raise "unknown init template: " + template
     } else {
-      let config = "{\n  \"name\": " + toJSON(name) + ",\n  \"engineVersion\": \"latest\",\n  \"sdk\": {\n    \"source\": \"dang\"\n  },\n  \"codegen\": {\n    \"automaticGitignore\": " + toJSON(ignoreGenerated) + "\n  }\n}\n"
-      let templateSource = renderedTemplate(name, selectedTemplate)
-      let seeded = fork
-        .withDirectory(modPath, templateSource)
-        .withNewFile(configPath, config)
-
-      seeded.changes
+      polyfill.workspace(ws).fork
+        .withDirectory(modPath, renderedTemplate(name, selectedTemplate))
+        .changes
     }
   }
 
