@@ -55,6 +55,23 @@ type DangSdk {
     }
   }
 
+  let normalizePath(p: String!): String! {
+    let trimmed = p.trimPrefix("./").trimPrefix("/").trimSuffix("/")
+    if (trimmed == "") { "." } else { trimmed }
+  }
+
+  let pathDepth(p: String!): Int! {
+    if (p == ".") { 0 } else { p.split("/").length }
+  }
+
+  let configDir(foundPath: String!, marker: String!): String! {
+    normalizePath(foundPath.trimPrefix("/").trimSuffix(marker))
+  }
+
+  let baseDepth(base: String): Int! {
+    if (base == null) { -1 } else { pathDepth(base) }
+  }
+
   """
   Return the Dang SDK module at or above a workspace path.
 
@@ -62,30 +79,25 @@ type DangSdk {
   """
   pub mod(ws: Workspace!, path: String! = ".", findUp: Boolean! = true): Mod! {
     let modPath = if (findUp) {
-      let foundConfigPath = ws.findUp("dagger.json", path)
-      if (foundConfigPath == null) {
-        raise "no Dagger module found containing path: " + path
+      let foundToml = ws.findUp("dagger-module.toml", path)
+      let foundJson = ws.findUp("dagger.json", path)
+      let tomlBase = if (foundToml == null) { null } else { configDir(foundToml, "dagger-module.toml") }
+      let jsonBase = if (foundJson == null) { null } else { configDir(foundJson, "dagger.json") }
+
+      # Both candidates are ancestors of `path`, so they lie on one chain and
+      # the deepest is the owning module. Trying dagger-module.toml first and
+      # only then falling back to dagger.json would let an ancestor's
+      # dagger-module.toml shadow a deeper legacy module in a partially
+      # migrated workspace.
+      let tomlDepth = baseDepth(tomlBase)
+      let jsonDepth = baseDepth(jsonBase)
+
+      if (tomlBase != null and tomlDepth >= jsonDepth) {
+        resolveTomlBase(ws, tomlBase, path)
+      } else if (jsonBase != null) {
+        resolveJsonBase(ws, jsonBase, path)
       } else {
-        let configPath = foundConfigPath.trimPrefix("/")
-        if (
-          ws
-            .directory("/", include: [configPath])
-            .file(configPath)
-            .search(
-              pattern: "\"sdk\"\\s*:\\s*\\{[^}]*\"source\"\\s*:\\s*\"dang\"",
-              multiline: true,
-              dotall: true,
-              limit: 1,
-            )
-            .{id}
-            .length == 0
-        ) {
-          raise "Dagger module does not use the Dang SDK: " + path
-        } else if (configPath == "dagger.json") {
-          "."
-        } else {
-          configPath.trimSuffix("/dagger.json")
-        }
+        raise "no Dagger module found containing path: " + path
       }
     } else {
       path.trimPrefix("/")
@@ -96,6 +108,77 @@ type DangSdk {
       ws: ws,
       skipGenerateFilename: skipGenerateFilename,
     )
+  }
+
+  let resolveTomlBase(ws: Workspace!, base: String!, path: String!): String! {
+    let runtimeSource = tomlRuntimeSource(ws, base)
+    if (runtimeSource == "dang") {
+      base
+    } else if (runtimeSource == "") {
+      raise "Dagger module does not use the Dang SDK: " + path
+    } else {
+      raise "Dagger module does not use the Dang SDK: " + path + " (runtime source: " + runtimeSource + ")"
+    }
+  }
+
+  let resolveJsonBase(ws: Workspace!, base: String!, path: String!): String! {
+    let configPath = if (base == ".") { "dagger.json" } else { base + "/dagger.json" }
+    if (
+      ws
+        .directory("/", include: [configPath])
+        .file(configPath)
+        .search(
+          pattern: "\"sdk\"\\s*:\\s*\\{[^}]*\"source\"\\s*:\\s*\"dang\"",
+          multiline: true,
+          dotall: true,
+          limit: 1,
+        )
+        .{id}
+        .length == 0
+    ) {
+      raise "Dagger module does not use the Dang SDK: " + path
+    } else {
+      base
+    }
+  }
+
+  """
+  Return the runtime source declared by a module's dagger-module.toml, or ""
+  when it declares none.
+
+  Only a quoted `source` on its own line of a literal [runtime] section is
+  recognized; inline tables and other TOML spellings read as no declaration,
+  which callers reject rather than mistake for Dang.
+  """
+  let tomlRuntimeSource(ws: Workspace!, base: String!): String! {
+    let configPath = if (base == ".") { "dagger-module.toml" } else { base + "/dagger-module.toml" }
+    let matches = ws
+      .directory("/", include: [configPath])
+      .file(configPath)
+      .search(
+        pattern: "^[ \\t]*\\[runtime\\][^\\[]*?^[ \\t]*source[ \\t]*=[ \\t]*(?:\"[^\"]*\"|'[^']*')",
+        multiline: true,
+        limit: 1,
+      )
+      .{matchedLines}
+
+    matches
+      .map { m => runtimeSourceValue(m.matchedLines) }
+      .reduce("") { acc, source => if (acc == "") { source } else { acc } }
+  }
+
+  """
+  Extract the runtime source value out of a matched [runtime] block.
+
+  The match stops at the first uncommented assignment, so the value lives on
+  the block's last line, ahead of any trailing comment.
+  """
+  let runtimeSourceValue(block: String!): String! {
+    let sourceLine = block.trimSpace.split("\n").reduce("") { acc, line => line }
+    let assignment = sourceLine.split("#").reduce("") { acc, part => if (acc == "") { part } else { acc } }.trimSpace
+    let quote = if (assignment.trimSuffix("'") == assignment) { "\"" } else { "'" }
+
+    assignment.trimSuffix(quote).split(quote).reduce("") { acc, part => part }
   }
 
   """
