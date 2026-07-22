@@ -1,0 +1,5 @@
+type LookupTomlApp {
+  pub hello: String! {
+    "lookup-toml"
+  }
+}

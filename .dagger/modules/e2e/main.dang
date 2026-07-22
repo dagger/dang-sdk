@@ -11,6 +11,14 @@ type E2e {
   let skipModulePath: String! = fixtureRoot + "/skip/app"
   let generateModulePath: String! = fixtureRoot + "/generate/app"
   let depsModulePath: String! = fixtureRoot + "/deps/app"
+  # CLI 1.0 modules: configured by dagger-module.toml instead of dagger.json.
+  let tomlModulePath: String! = fixtureRoot + "/lookup-toml/app"
+  let tomlNestedPath: String! = tomlModulePath + "/nested"
+  let nonDangTomlModulePath: String! = fixtureRoot + "/lookup-toml/not-dang"
+  # A partially migrated tree: an ancestor dagger.json, a nearer dagger-module.toml.
+  let mixedOuterPath: String! = fixtureRoot + "/mixed-config/outer"
+  let mixedInnerPath: String! = mixedOuterPath + "/inner"
+  let mixedNestedPath: String! = mixedInnerPath + "/nested"
 
   """
   Fail the current check when a condition is false.
@@ -78,8 +86,56 @@ type E2e {
     let nested = dangSdk.mod(ws, path: lookupNestedPath)
     let exact = dangSdk.mod(ws, path: lookupModulePath, findUp: false)
 
-    assert(nested.path == lookupModulePath, "find-up lookup returned the wrong module path")
-    assert(exact.path == lookupModulePath, "exact lookup returned the wrong module path")
+    assert(nested.rootPath == lookupModulePath, "find-up lookup returned the wrong module path")
+    assert(exact.rootPath == lookupModulePath, "exact lookup returned the wrong module path")
+
+    null
+  }
+
+  """
+  Return the error message raised while resolving a module, or its resolved
+  path when the lookup unexpectedly succeeds.
+  """
+  let lookupFailure(ws: Workspace!, path: String!): String! {
+    try {
+      dangSdk.mod(ws, path: path).rootPath
+    } catch {
+      err => err.message
+    }
+  }
+
+  """
+  Mod lookup should find the owning module through a dagger-module.toml.
+  """
+  pub moduleLookupTomlCheck(ws: Workspace!): Void @check {
+    let nested = dangSdk.mod(ws, path: tomlNestedPath)
+    let exact = dangSdk.mod(ws, path: tomlModulePath, findUp: false)
+
+    assert(nested.rootPath == tomlModulePath, "find-up lookup returned the wrong dagger-module.toml module path")
+    assert(exact.rootPath == tomlModulePath, "exact lookup returned the wrong dagger-module.toml module path")
+
+    null
+  }
+
+  """
+  A dagger-module.toml module owned by another runtime should be rejected.
+  """
+  pub moduleLookupNonDangTomlCheck(ws: Workspace!): Void @check {
+    let message = lookupFailure(ws, nonDangTomlModulePath)
+
+    assertContains(message, "does not use the Dang SDK", "non-Dang runtime was not rejected: " + message)
+
+    null
+  }
+
+  """
+  In a partially migrated tree the closest config wins: a nearer
+  dagger-module.toml must beat an ancestor's legacy dagger.json.
+  """
+  pub mixedConfigLookupCheck(ws: Workspace!): Void @check {
+    let nested = dangSdk.mod(ws, path: mixedNestedPath)
+
+    assert(nested.rootPath == mixedInnerPath, "closest config did not win; resolved to " + nested.rootPath)
 
     null
   }
@@ -136,6 +192,70 @@ type E2e {
 
     assert(changes.isEmpty, "Dang generateAll should be empty")
     assert(contains(changes.addedPaths, nonDangModulePath + "/main.dang") == false, "generateAll generated a non-Dang SDK module")
+
+    null
+  }
+
+  """
+  From the workspace root the whole workspace is in scope, so modules() should
+  return every Dang module — whether configured by the legacy dagger.json or the
+  CLI 1.0 dagger-module.toml — and nothing owned by another runtime.
+  """
+  pub modulesCheck(ws: Workspace!): Void @check {
+    let roots = dangSdk.modules(ws).{{rootPath}}.map { mod => mod.rootPath }
+
+    assert(contains(roots, lookupModulePath), "lookup Dang module should be listed")
+    assert(contains(roots, skipModulePath), "skip-marked Dang module should still be listed (skip only affects generate)")
+    assert(contains(roots, generateModulePath), "generate Dang module should be listed")
+    assert(contains(roots, depsModulePath), "deps Dang module should be listed")
+    assert(contains(roots, tomlModulePath), "a dagger-module.toml (CLI 1.0) Dang module should be listed")
+    assert(contains(roots, nonDangModulePath) == false, "a dagger.json module owned by another runtime should be excluded")
+    assert(contains(roots, nonDangTomlModulePath) == false, "a dagger-module.toml module owned by another runtime should be excluded")
+
+    null
+  }
+
+  """
+  Discovery is anchored at the client's cwd, not the workspace root. Re-anchoring
+  the workspace to a subdirectory scopes modules() to the Dang modules in that
+  cone (walk-down) plus the nearest enclosing one (find-up), whether they are
+  configured by dagger.json or dagger-module.toml, and excludes modules that
+  live outside it or are owned by another runtime.
+  """
+  pub modulesCwdCheck(ws: Workspace!): Void @check {
+    # A stable snapshot of the fixtures, re-anchorable at any cwd. Scoped to the
+    # fixture tree so the repo's own Dang modules (this e2e module, the root
+    # dang-sdk module) don't leak into find-up and skew the counts. Keep every
+    # fixture config (both formats, for discovery) and the nested .keep files so
+    # config-less subdirectories survive the include filter.
+    let root = ws.directory("/", include: [
+      fixtureRoot + "/**/dagger.json",
+      fixtureRoot + "/**/dagger-module.toml",
+      fixtureRoot + "/**/.keep",
+    ])
+
+    # Walk-down: from fixtures/generate only generate/app is in the cone; its
+    # cwd-relative path is "app" — a directory beneath the cwd.
+    let fromGenerate = dangSdk.modules(root.asWorkspace(cwd: fixtureRoot + "/generate")).{{rootPath, path}}
+    assert(fromGenerate.filter { r => r.rootPath == generateModulePath }.length > 0, "cwd=generate: the Dang module in the cone should be discovered")
+    assert(fromGenerate.filter { r => r.rootPath == lookupModulePath }.length == 0, "cwd=generate: lookup/app is outside the cone and must be excluded")
+    assert(fromGenerate.length == 1, "cwd=generate: exactly one Dang module is in the cone")
+    assert(fromGenerate.filter { r => r.path == "app" }.length > 0, "cwd=generate: the discovered module's path should be cwd-relative (app)")
+
+    # Find-up: from inside lookup/app (a config-less subdir) the enclosing module
+    # is discovered; its cwd-relative path is ".." — an ancestor of the cwd.
+    let fromNested = dangSdk.modules(root.asWorkspace(cwd: lookupNestedPath)).{{rootPath, path}}
+    assert(fromNested.filter { r => r.rootPath == lookupModulePath }.length > 0, "cwd=lookup/app/nested: find-up should discover the enclosing lookup/app")
+    assert(fromNested.length == 1, "cwd=lookup/app/nested: only the enclosing module should be discovered")
+    assert(fromNested.filter { r => r.path == ".." }.length > 0, "cwd=lookup/app/nested: the enclosing module's path should be cwd-relative (..)")
+
+    # Walk-down over a dagger-module.toml cone: only the Dang toml module is in
+    # scope; the sibling toml module owned by another runtime is excluded.
+    let fromToml = dangSdk.modules(root.asWorkspace(cwd: fixtureRoot + "/lookup-toml")).{{rootPath, path}}
+    assert(fromToml.filter { r => r.rootPath == tomlModulePath }.length > 0, "cwd=lookup-toml: the dagger-module.toml Dang module should be discovered")
+    assert(fromToml.filter { r => r.rootPath == nonDangTomlModulePath }.length == 0, "cwd=lookup-toml: the sibling toml module owned by another runtime must be excluded")
+    assert(fromToml.length == 1, "cwd=lookup-toml: exactly one Dang module is in the cone")
+    assert(fromToml.filter { r => r.path == "app" }.length > 0, "cwd=lookup-toml: the discovered module's path should be cwd-relative (app)")
 
     null
   }

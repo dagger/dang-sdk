@@ -7,8 +7,8 @@
   "dependencies": [
     {
       "name": "polyfill",
-      "source": "github.com/dagger/sdk-sdk/polyfill@main",
-      "pin": "d1532df4f7d322a7bdab02487accde9d21bbb464"
+      "source": "github.com/dagger/polyfill@main",
+      "pin": "e90bbfc4843258a877a3a95b8db1571e7981e65f"
     }
   ]
 }

@@ -48,7 +48,8 @@ For a single module:
 dagger call dang-sdk mod --path my-module generate
 ```
 
-For every Dang SDK module in the workspace, skipping any with a
+For every Dang SDK module visible from your current directory — the module
+you're in and the projects beneath it — skipping any with a
 `.dagger-dang-sdk-skip-generate` marker at or above the module root:
 
 ```sh
@@ -107,6 +108,11 @@ dagger call dang-sdk mod --path my-module engine require-latest
 ```
 
 ## Discover Modules In A Workspace
+
+Discovery is anchored at your current directory, not the workspace root: the
+nearest enclosing module plus every Dang module beneath you. Modules configured
+by the legacy `dagger.json` and the CLI 1.0 `dagger-module.toml` are both found.
+Paths print relative to where you invoked the command.
 
 ```sh
 dagger call dang-sdk modules path

@@ -8,26 +8,101 @@ type DangSdk {
   pub skipGenerateFilename: String! = ".dagger-dang-sdk-skip-generate"
 
   """
-  Return every Dagger module whose sdk.source is "dang".
+  Config that marks a Dang module: a legacy dagger.json whose sdk.source is
+  "dang", or a CLI 1.0 dagger-module.toml whose [runtime] source is "dang".
+  """
+  let legacyConfigPattern: String! = "\"sdk\"\\s*:\\s*\\{[^}]*\"source\"\\s*:\\s*\"dang\""
+  let tomlConfigPattern: String! = "\\[runtime\\][^\\[]*source\\s*=\\s*\"dang\""
+  let moduleConfigFilenames: [String!]! = ["dagger-module.toml", "dagger.json"]
+
+  """
+  Return every Dang SDK module visible from the client's current location.
+
+  Discovery is anchored at the client's cwd, not the workspace root: the
+  nearest enclosing module plus every Dang module at or below the cwd. Running
+  from a subdirectory acts on the project you're in — and the projects beneath
+  it — not the whole workspace. A module is Dang whether it is configured by
+  the legacy dagger.json or the CLI 1.0 dagger-module.toml.
   """
   pub modules(ws: Workspace!): [Mod!]! {
-    ws
-      .directory("/", include: ["**/dagger.json"])
-      .search(
-        pattern: "\"sdk\"\\s*:\\s*\\{[^}]*\"source\"\\s*:\\s*\"dang\"",
-        globs: ["**/dagger.json"],
-        filesOnly: true,
-        multiline: true,
-        dotall: true,
-      )
+    let cwd = workspaceCwd(ws)
+    let dangDirs = dangModuleDirs(ws)
+    polyfill.workspace(ws)
+      .findConfigDirs(moduleConfigFilenames)
+      .map { dir => workspacePath(cwd, dir) }
+      .uniq
+      .filter { path => dangDirs.filter { dir => dir == path }.length > 0 }
+      .map { path => Mod(rootPath: path, ws: ws, skipGenerateFilename: skipGenerateFilename) }
+  }
+
+  """
+  Return the workspace-root-relative directory of every module whose config
+  declares the Dang runtime, found by content search across both formats.
+  """
+  let dangModuleDirs(ws: Workspace!): [String!]! {
+    let root = ws.directory("/", include: moduleConfigFilenames.map { name => "**/" + name })
+    let jsonDirs = root
+      .search(pattern: legacyConfigPattern, globs: ["**/dagger.json"], filesOnly: true, multiline: true, dotall: true)
       .{filePath}
-      .map { configPath =>
-        mod(
-          ws,
-          if (configPath.filePath == "dagger.json") { "." } else { configPath.filePath.trimSuffix("/dagger.json") },
-          findUp: false,
-        )
+      .map { match => configDir(match.filePath, "dagger.json") }
+    let tomlDirs = root
+      .search(pattern: tomlConfigPattern, globs: ["**/dagger-module.toml"], filesOnly: true, multiline: true, dotall: true)
+      .{filePath}
+      .map { match => configDir(match.filePath, "dagger-module.toml") }
+    (jsonDirs + tomlDirs).uniq
+  }
+
+  """
+  Return the caller cwd as a workspace-root-relative path, "." at the root.
+
+  Uses the polyfill's findUp trick so the helper stays valid on engines that
+  don't expose Workspace.cwd.
+  """
+  let workspaceCwd(ws: Workspace!): String! {
+    let found = ws.findUp(name: ".", from: ".")
+    if (found == null or found == "/") { "." } else { normalizePath(found) }
+  }
+
+  """
+  Resolve a cwd-relative config dir — at or below the cwd ("." , "sub/dir") or
+  a strict ancestor (".." , "../..") — against the cwd into a
+  workspace-root-relative path.
+  """
+  let workspacePath(cwd: String!, path: String!): String! {
+    let base = if (cwd == ".") { [] } else { cwd.split("/") }
+    let segments = path.split("/").reduce(base) { acc, segment =>
+      if (segment == "..") {
+        acc.dropLast(1)
+      } else if (segment == "." or segment == "") {
+        acc
+      } else {
+        acc + [segment]
       }
+    }
+    if (segments.length == 0) { "." } else { segments.join("/") }
+  }
+
+  """
+  Return a valid workspace-root-relative path, "." at the root.
+  """
+  let normalizePath(path: String!): String! {
+    let trimmed = path.trimPrefix("./").trimPrefix("/").trimSuffix("/")
+    if (trimmed == "") { "." } else { trimmed }
+  }
+
+  """
+  Return the directory holding a config file: "a/b/dagger.json" -> "a/b",
+  "dagger.json" -> ".".
+  """
+  let configDir(path: String!, filename: String!): String! {
+    normalizePath(path.trimPrefix("/").trimSuffix(filename))
+  }
+
+  """
+  Return the depth of a workspace-root-relative path, 0 at the root, -1 for null.
+  """
+  let pathDepth(path: String): Int! {
+    if (path == null) { -1 } else if (path == ".") { 0 } else { path.split("/").length }
   }
 
   """
@@ -58,44 +133,54 @@ type DangSdk {
   """
   Return the Dang SDK module at or above a workspace path.
 
-  When `findUp` is true, `path` may point inside the module.
+  When `findUp` is true, `path` may point inside the module. Both the legacy
+  dagger.json and the CLI 1.0 dagger-module.toml are recognized; when a
+  partially migrated tree holds both, the nearest config wins.
   """
   pub mod(ws: Workspace!, path: String! = ".", findUp: Boolean! = true): Mod! {
     let modPath = if (findUp) {
-      let foundConfigPath = ws.findUp("dagger.json", path)
-      if (foundConfigPath == null) {
+      let foundToml = ws.findUp("dagger-module.toml", path)
+      let foundJson = ws.findUp("dagger.json", path)
+      let tomlBase = if (foundToml == null) { null } else { configDir(foundToml, "dagger-module.toml") }
+      let jsonBase = if (foundJson == null) { null } else { configDir(foundJson, "dagger.json") }
+
+      if (tomlBase == null and jsonBase == null) {
         raise "no Dagger module found containing path: " + path
+      } else if (tomlBase != null and pathDepth(tomlBase) >= pathDepth(jsonBase)) {
+        validateConfig(ws, tomlBase, "dagger-module.toml", tomlConfigPattern, path)
+      } else if (jsonBase != null) {
+        validateConfig(ws, jsonBase, "dagger.json", legacyConfigPattern, path)
       } else {
-        let configPath = foundConfigPath.trimPrefix("/")
-        if (
-          ws
-            .directory("/", include: [configPath])
-            .file(configPath)
-            .search(
-              pattern: "\"sdk\"\\s*:\\s*\\{[^}]*\"source\"\\s*:\\s*\"dang\"",
-              multiline: true,
-              dotall: true,
-              limit: 1,
-            )
-            .{id}
-            .length == 0
-        ) {
-          raise "Dagger module does not use the Dang SDK: " + path
-        } else if (configPath == "dagger.json") {
-          "."
-        } else {
-          configPath.trimSuffix("/dagger.json")
-        }
+        raise "no Dagger module found containing path: " + path
       }
     } else {
-      path.trimPrefix("/")
+      normalizePath(path)
     }
 
     Mod(
-      path: modPath,
+      rootPath: modPath,
       ws: ws,
       skipGenerateFilename: skipGenerateFilename,
     )
+  }
+
+  """
+  Confirm the config at `base` declares the Dang runtime, returning `base`, or
+  raise naming the requested path when it does not.
+  """
+  let validateConfig(ws: Workspace!, base: String!, filename: String!, pattern: String!, requestedPath: String!): String! {
+    let configPath = if (base == ".") { filename } else { base + "/" + filename }
+    let matches = ws
+      .directory("/", include: [configPath])
+      .file(configPath)
+      .search(pattern: pattern, multiline: true, dotall: true, limit: 1)
+      .{id}
+      .length > 0
+    if (matches) {
+      base
+    } else {
+      raise "Dagger module does not use the Dang SDK: " + requestedPath
+    }
   }
 
   """
@@ -147,7 +232,10 @@ type DangSdk {
   }
 
   """
-  Generate all discovered Dang SDK modules.
+  Generate every Dang SDK module visible from the client's current location:
+  running from a subdirectory generates only the project you're in and the
+  projects beneath it.
+
   Modules with the generate skip marker are skipped.
   """
   pub generateAll(ws: Workspace!): Changeset! @generate {
@@ -156,7 +244,7 @@ type DangSdk {
     modules(ws)
       .filter { mod => mod.skipGenerate(ws) == false }
       .reduce(pws.fork) { fork, mod =>
-        fork.merge(pws.moduleSource("/" + mod.path).generate)
+        fork.merge(pws.moduleSource("/" + mod.rootPath).generate)
       }
       .changes
   }
