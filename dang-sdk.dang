@@ -5,7 +5,7 @@ type DangSdk {
   """
   Marker filename that skips generate when found at or above a Dang SDK module root.
   """
-  pub skipGenerateFilename: String! = ".dagger-dang-sdk-skip-generate"
+  skipGenerateFilename: String! = ".dagger-dang-sdk-skip-generate"
 
   """
   Config that marks a Dang module: a legacy dagger.json whose sdk.source is
@@ -24,10 +24,11 @@ type DangSdk {
   it — not the whole workspace. A module is Dang whether it is configured by
   the legacy dagger.json or the CLI 1.0 dagger-module.toml.
   """
-  pub modules(ws: Workspace!): [Mod!]! {
+  modules(ws: Workspace!): [Mod!]! {
     let cwd = workspaceCwd(ws)
     let dangDirs = dangModuleDirs(ws)
-    polyfill.workspace(ws)
+    polyfill
+      .workspace(ws)
       .findConfigDirs(moduleConfigFilenames)
       .map { dir => workspacePath(cwd, dir) }
       .uniq
@@ -42,12 +43,22 @@ type DangSdk {
   let dangModuleDirs(ws: Workspace!): [String!]! {
     let root = ws.directory("/", include: moduleConfigFilenames.map { name => "**/" + name })
     let jsonDirs = root
-      .search(pattern: legacyConfigPattern, globs: ["**/dagger.json"], filesOnly: true, multiline: true, dotall: true)
-      .{filePath}
+      .search(
+        pattern: legacyConfigPattern,
+        globs: ["**/dagger.json"],
+        filesOnly: true,
+        multiline: true,
+        dotall: true,
+      ).{{filePath}}
       .map { match => configDir(match.filePath, "dagger.json") }
     let tomlDirs = root
-      .search(pattern: tomlConfigPattern, globs: ["**/dagger-module.toml"], filesOnly: true, multiline: true, dotall: true)
-      .{filePath}
+      .search(
+        pattern: tomlConfigPattern,
+        globs: ["**/dagger-module.toml"],
+        filesOnly: true,
+        multiline: true,
+        dotall: true,
+      ).{{filePath}}
       .map { match => configDir(match.filePath, "dagger-module.toml") }
     (jsonDirs + tomlDirs).uniq
   }
@@ -111,7 +122,7 @@ type DangSdk {
   Templates live under templates/<name> and are materialized into the new
   module. Passing an empty template to init uses the module default.
   """
-  pub templates: [Template!]! {
+  templates: [Template!]! {
     if (currentModule.source.exists("templates")) {
       let root = currentModule.source.directory("templates")
       root.entries.map { name =>
@@ -137,12 +148,22 @@ type DangSdk {
   dagger.json and the CLI 1.0 dagger-module.toml are recognized; when a
   partially migrated tree holds both, the nearest config wins.
   """
-  pub mod(ws: Workspace!, path: String! = ".", findUp: Boolean! = true): Mod! {
+  mod(ws: Workspace!, path: String! = ".", findUp: Boolean! = true): Mod! {
     let modPath = if (findUp) {
       let foundToml = ws.findUp("dagger-module.toml", path)
       let foundJson = ws.findUp("dagger.json", path)
-      let tomlBase = if (foundToml == null) { null } else { configDir(foundToml, "dagger-module.toml") }
-      let jsonBase = if (foundJson == null) { null } else { configDir(foundJson, "dagger.json") }
+      let tomlBase = if (foundToml == null) { null } else {
+        configDir(
+          foundToml,
+          "dagger-module.toml",
+        )
+      }
+      let jsonBase = if (foundJson == null) { null } else {
+        configDir(
+          foundJson,
+          "dagger.json",
+        )
+      }
 
       if (tomlBase == null and jsonBase == null) {
         raise "no Dagger module found containing path: " + path
@@ -168,13 +189,18 @@ type DangSdk {
   Confirm the config at `base` declares the Dang runtime, returning `base`, or
   raise naming the requested path when it does not.
   """
-  let validateConfig(ws: Workspace!, base: String!, filename: String!, pattern: String!, requestedPath: String!): String! {
+  let validateConfig(
+    ws: Workspace!,
+    base: String!,
+    filename: String!,
+    pattern: String!,
+    requestedPath: String!,
+  ): String! {
     let configPath = if (base == ".") { filename } else { base + "/" + filename }
     let matches = ws
       .directory("/", include: [configPath])
       .file(configPath)
-      .search(pattern: pattern, multiline: true, dotall: true, limit: 1)
-      .{id}
+      .search(pattern: pattern, multiline: true, dotall: true, limit: 1).{{id}}
       .length > 0
     if (matches) {
       base
@@ -190,7 +216,7 @@ type DangSdk {
   `dagger module init dang` run on the built-in "dang" runtime rather than on
   this management module.
   """
-  pub targetRuntime: String! {
+  targetRuntime: String! {
     "dang"
   }
 
@@ -201,14 +227,23 @@ type DangSdk {
   so this returns only the starter source under `path`. `template` selects a
   templates/<template> directory; the empty default uses the minimal template.
   """
-  pub initModule(ws: Workspace!, name: String!, path: String!, template: String! = ""): Changeset! {
-    let modPath = if (path == "" or path == ".") { "." } else { path.trimSuffix("/") }
+  initModule(
+    ws: Workspace!,
+    name: String!,
+    path: String!,
+    template: String! = "",
+  ): Changeset! {
+    let modPath = if (path == "" or path == ".") { "." } else {
+      path.trimSuffix("/")
+    }
     let selectedTemplate = if (template == "") { "minimal" } else { template }
 
     if (currentModule.source.exists("templates/" + selectedTemplate) == false) {
       raise "unknown init template: " + template
     } else {
-      polyfill.workspace(ws).fork
+      polyfill
+        .workspace(ws)
+        .fork
         .withDirectory(modPath, renderedTemplate(name, selectedTemplate))
         .changes
     }
@@ -238,14 +273,16 @@ type DangSdk {
 
   Modules with the generate skip marker are skipped.
   """
-  pub generateAll(ws: Workspace!): Changeset! @generate {
+  generate(ws: Workspace!): Changeset! @generate {
     let pws = polyfill.workspace(ws)
 
-    modules(ws)
-      .filter { mod => mod.skipGenerate(ws) == false }
-      .reduce(pws.fork) { fork, mod =>
-        fork.merge(pws.moduleSource("/" + mod.rootPath).generate)
-      }
-      .changes
+    let changes = modules(ws)
+      .filter { !_.skipGenerate(ws) }
+      .map { mod => pws.moduleSource("/" + mod.rootPath).generate.changes }
+
+    # force them to evaluate in parallel by asking each if they have changes
+    changes.{{isEmpty}}
+
+    changeset.withChangesets(changes)
   }
 }
