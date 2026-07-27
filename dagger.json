@@ -1,6 +1,6 @@
 {
   "name": "dang-sdk",
-  "engineVersion": "v0.20.8",
+  "engineVersion": "v1.0.0-0",
   "sdk": {
     "source": "dang"
   },
