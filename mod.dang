@@ -6,7 +6,7 @@ type Mod {
   Workspace-root-relative path of this module root — the module's stable
   identity, independent of where the client is invoked from.
   """
-  pub rootPath: String!
+  rootPath: String!
 
   """
   Workspace containing this module.
@@ -24,7 +24,7 @@ type Mod {
   enclosing one. A cwd-relative view of rootPath, so listings read the way a
   shell user would.
   """
-  pub path: String! {
+  path: String! {
     let cwd = moduleCwd(ws)
     if (rootPath == cwd) {
       "."
@@ -56,14 +56,14 @@ type Mod {
   """
   Whether this module or an ancestor contains the configured generate skip marker.
   """
-  pub skipGenerate(ws: Workspace!): Boolean! {
+  skipGenerate(ws: Workspace!): Boolean! {
     hasMarker(ws, skipGenerateFilename)
   }
 
   """
   Manage this module's Dagger dependencies.
   """
-  pub deps: ModDeps! {
+  deps: ModDeps! {
     ModDeps(
       path: rootPath,
       ws: ws,
@@ -73,7 +73,7 @@ type Mod {
   """
   Manage the Dagger engine version required by this module.
   """
-  pub engine: ModEngine! {
+  engine: ModEngine! {
     ModEngine(
       path: rootPath,
       ws: ws,
@@ -92,11 +92,11 @@ type Mod {
   Generate this module.
   If the generate skip marker is present, the changeset is empty.
   """
-  pub generate(ws: Workspace!): Changeset! {
+  generate(ws: Workspace!): Changeset! {
     if (skipGenerate(ws)) {
       polyfill.workspace(ws).fork.changes
     } else {
-      polyfill.workspace(ws).moduleSource("/" + rootPath).generate.changes
+      polyfill.workspace(ws).moduleSource("/" + rootPath).generate
     }
   }
 }
