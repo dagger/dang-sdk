@@ -281,7 +281,16 @@ type DangSdk {
     changeset.withChangesets(
       modules(ws)
         .filter { !_.skipGenerate(ws) }
-        .map { mod => pws.moduleSource("/" + mod.rootPath).generate },
+        .map { mod =>
+          # Stage this module's local dependency closure first (leaf-first, possibly
+          # across SDKs) so its codegen sees up-to-date dependency bindings. The dep
+          # codegen is ephemeral: taking the changeset against the staged workspace
+          # cancels it out, leaving only each module's own changes.
+          let stagedWs = ws.withChanges(
+            pws.moduleSource("/" + mod.rootPath).core.generateLocalDependencies(ws),
+          )
+          polyfill.workspace(stagedWs).moduleSource("/" + mod.rootPath).generate
+        },
     )
   }
 }
