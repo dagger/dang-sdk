@@ -272,15 +272,25 @@ type DangSdk {
   projects beneath it.
 
   Modules with the generate skip marker are skipped.
-  """
-  generateAll(ws: Workspace!): Changeset! @generate {
-    let pws = polyfill.workspace(ws)
 
-    modules(ws)
-      .filter { mod => mod.skipGenerate(ws) == false }
-      .reduce(pws.fork) { fork, mod =>
-        fork.merge(pws.moduleSource("/" + mod.rootPath).generate)
-      }
-      .changes
+  Two modules generating the same path is a conflict and fails, rather than
+  silently keeping whichever module happened to be generated last.
+  """
+  generate(ws: Workspace!): Changeset! @generate {
+    let pws = polyfill.workspace(ws)
+    changeset.withChangesets(
+      modules(ws)
+        .filter { !_.skipGenerate(ws) }
+        .map { mod =>
+          # Stage this module's local dependency closure first (leaf-first, possibly
+          # across SDKs) so its codegen sees up-to-date dependency bindings. The dep
+          # codegen is ephemeral: taking the changeset against the staged workspace
+          # cancels it out, leaving only each module's own changes.
+          let stagedWs = ws.withChanges(
+            pws.moduleSource("/" + mod.rootPath).core.generateLocalDependencies(ws),
+          )
+          polyfill.workspace(stagedWs).moduleSource("/" + mod.rootPath).generate
+        },
+    )
   }
 }

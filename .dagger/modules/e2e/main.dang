@@ -73,7 +73,7 @@ type E2e {
   """
   The helper should expose the generate skip marker used by callers.
   """
-  pub skipGenerateFilenameCheck: Void @check {
+  skipGenerateFilenameCheck: Void @check {
     assert(dangSdk.skipGenerateFilename == ".dagger-dang-sdk-skip-generate", "skip marker filename changed")
 
     null
@@ -82,7 +82,7 @@ type E2e {
   """
   Mod lookup should find the owning Dang SDK module when called from a nested path.
   """
-  pub moduleLookupCheck(ws: Workspace!): Void @check {
+  moduleLookupCheck(ws: Workspace!): Void @check {
     let nested = dangSdk.mod(ws, path: lookupNestedPath)
     let exact = dangSdk.mod(ws, path: lookupModulePath, findUp: false)
 
@@ -97,17 +97,15 @@ type E2e {
   path when the lookup unexpectedly succeeds.
   """
   let lookupFailure(ws: Workspace!, path: String!): String! {
-    try {
-      dangSdk.mod(ws, path: path).rootPath
-    } catch {
-      err => err.message
+    dangSdk.mod(ws, path: path).rootPath rescue {
+      err: Error => err.message
     }
   }
 
   """
   Mod lookup should find the owning module through a dagger-module.toml.
   """
-  pub moduleLookupTomlCheck(ws: Workspace!): Void @check {
+  moduleLookupTomlCheck(ws: Workspace!): Void @check {
     let nested = dangSdk.mod(ws, path: tomlNestedPath)
     let exact = dangSdk.mod(ws, path: tomlModulePath, findUp: false)
 
@@ -120,7 +118,7 @@ type E2e {
   """
   A dagger-module.toml module owned by another runtime should be rejected.
   """
-  pub moduleLookupNonDangTomlCheck(ws: Workspace!): Void @check {
+  moduleLookupNonDangTomlCheck(ws: Workspace!): Void @check {
     let message = lookupFailure(ws, nonDangTomlModulePath)
 
     assertContains(message, "does not use the Dang SDK", "non-Dang runtime was not rejected: " + message)
@@ -132,7 +130,7 @@ type E2e {
   In a partially migrated tree the closest config wins: a nearer
   dagger-module.toml must beat an ancestor's legacy dagger.json.
   """
-  pub mixedConfigLookupCheck(ws: Workspace!): Void @check {
+  mixedConfigLookupCheck(ws: Workspace!): Void @check {
     let nested = dangSdk.mod(ws, path: mixedNestedPath)
 
     assert(nested.rootPath == mixedInnerPath, "closest config did not win; resolved to " + nested.rootPath)
@@ -144,7 +142,7 @@ type E2e {
   targetRuntime should delegate execution to the engine's built-in dang runtime,
   not to this management module.
   """
-  pub targetRuntimeCheck: Void @check {
+  targetRuntimeCheck: Void @check {
     assert(dangSdk.targetRuntime == "dang", "targetRuntime should be the built-in dang runtime")
 
     null
@@ -155,7 +153,7 @@ type E2e {
   config files, so initModule must not write dagger.json, dagger.toml, or
   dagger-module.toml.
   """
-  pub initModuleCheck(ws: Workspace!): Void @check {
+  initModuleCheck(ws: Workspace!): Void @check {
     let modulePath = outputRoot + "/init-module"
     let changes = dangSdk.initModule(ws, name: "init-module", path: modulePath)
     let mainPath = modulePath + "/main.dang"
@@ -176,7 +174,7 @@ type E2e {
   Generating an existing generated-clean Dang module should not produce
   language-side files today.
   """
-  pub generateCheck(ws: Workspace!): Void @check {
+  generateCheck(ws: Workspace!): Void @check {
     let changes = dangSdk.mod(ws, path: generateModulePath).generate(ws)
 
     assert(changes.isEmpty, "Dang generation should be empty")
@@ -187,11 +185,14 @@ type E2e {
   """
   Generating all modules should discover Dang SDK modules and ignore skipped ones.
   """
-  pub generateAllCheck(ws: Workspace!): Void @check {
-    let changes = dangSdk.generateAll(ws)
+  generateAllCheck(ws: Workspace!): Void @check {
+    let changes = dangSdk.generate(ws)
 
     assert(changes.isEmpty, "Dang generateAll should be empty")
-    assert(contains(changes.addedPaths, nonDangModulePath + "/main.dang") == false, "generateAll generated a non-Dang SDK module")
+    assert(
+      contains(changes.addedPaths, nonDangModulePath + "/main.dang") == false,
+      "generateAll generated a non-Dang SDK module",
+    )
 
     null
   }
@@ -201,7 +202,7 @@ type E2e {
   return every Dang module — whether configured by the legacy dagger.json or the
   CLI 1.0 dagger-module.toml — and nothing owned by another runtime.
   """
-  pub modulesCheck(ws: Workspace!): Void @check {
+  modulesCheck(ws: Workspace!): Void @check {
     let roots = dangSdk.modules(ws).{{rootPath}}.map { mod => mod.rootPath }
 
     assert(contains(roots, lookupModulePath), "lookup Dang module should be listed")
@@ -222,7 +223,7 @@ type E2e {
   configured by dagger.json or dagger-module.toml, and excludes modules that
   live outside it or are owned by another runtime.
   """
-  pub modulesCwdCheck(ws: Workspace!): Void @check {
+  modulesCwdCheck(ws: Workspace!): Void @check {
     # A stable snapshot of the fixtures, re-anchorable at any cwd. Scoped to the
     # fixture tree so the repo's own Dang modules (this e2e module, the root
     # dang-sdk module) don't leak into find-up and skew the counts. Keep every
@@ -236,24 +237,40 @@ type E2e {
 
     # Walk-down: from fixtures/generate only generate/app is in the cone; its
     # cwd-relative path is "app" — a directory beneath the cwd.
-    let fromGenerate = dangSdk.modules(root.asWorkspace(cwd: fixtureRoot + "/generate")).{{rootPath, path}}
-    assert(fromGenerate.filter { r => r.rootPath == generateModulePath }.length > 0, "cwd=generate: the Dang module in the cone should be discovered")
-    assert(fromGenerate.filter { r => r.rootPath == lookupModulePath }.length == 0, "cwd=generate: lookup/app is outside the cone and must be excluded")
+    let fromGenerate = dangSdk.modules(
+      root.asWorkspace(cwd: fixtureRoot + "/generate"),
+    ).{{rootPath, path}}
+    assert(
+      fromGenerate.filter { r => r.rootPath == generateModulePath }.length > 0,
+      "cwd=generate: the Dang module in the cone should be discovered",
+    )
+    assert(
+      fromGenerate.filter { r => r.rootPath == lookupModulePath }.length == 0,
+      "cwd=generate: lookup/app is outside the cone and must be excluded",
+    )
     assert(fromGenerate.length == 1, "cwd=generate: exactly one Dang module is in the cone")
     assert(fromGenerate.filter { r => r.path == "app" }.length > 0, "cwd=generate: the discovered module's path should be cwd-relative (app)")
 
     # Find-up: from inside lookup/app (a config-less subdir) the enclosing module
     # is discovered; its cwd-relative path is ".." — an ancestor of the cwd.
     let fromNested = dangSdk.modules(root.asWorkspace(cwd: lookupNestedPath)).{{rootPath, path}}
-    assert(fromNested.filter { r => r.rootPath == lookupModulePath }.length > 0, "cwd=lookup/app/nested: find-up should discover the enclosing lookup/app")
+    assert(
+      fromNested.filter { r => r.rootPath == lookupModulePath }.length > 0,
+      "cwd=lookup/app/nested: find-up should discover the enclosing lookup/app",
+    )
     assert(fromNested.length == 1, "cwd=lookup/app/nested: only the enclosing module should be discovered")
     assert(fromNested.filter { r => r.path == ".." }.length > 0, "cwd=lookup/app/nested: the enclosing module's path should be cwd-relative (..)")
 
     # Walk-down over a dagger-module.toml cone: only the Dang toml module is in
     # scope; the sibling toml module owned by another runtime is excluded.
-    let fromToml = dangSdk.modules(root.asWorkspace(cwd: fixtureRoot + "/lookup-toml")).{{rootPath, path}}
+    let fromToml = dangSdk.modules(
+      root.asWorkspace(cwd: fixtureRoot + "/lookup-toml"),
+    ).{{rootPath, path}}
     assert(fromToml.filter { r => r.rootPath == tomlModulePath }.length > 0, "cwd=lookup-toml: the dagger-module.toml Dang module should be discovered")
-    assert(fromToml.filter { r => r.rootPath == nonDangTomlModulePath }.length == 0, "cwd=lookup-toml: the sibling toml module owned by another runtime must be excluded")
+    assert(
+      fromToml.filter { r => r.rootPath == nonDangTomlModulePath }.length == 0,
+      "cwd=lookup-toml: the sibling toml module owned by another runtime must be excluded",
+    )
     assert(fromToml.length == 1, "cwd=lookup-toml: exactly one Dang module is in the cone")
     assert(fromToml.filter { r => r.path == "app" }.length > 0, "cwd=lookup-toml: the discovered module's path should be cwd-relative (app)")
 
@@ -263,7 +280,7 @@ type E2e {
   """
   A skip marker above a module should make generate return an empty changeset.
   """
-  pub skipGenerateCheck(ws: Workspace!): Void @check {
+  skipGenerateCheck(ws: Workspace!): Void @check {
     let mod = dangSdk.mod(ws, path: skipModulePath)
     let changes = mod.generate(ws)
 
@@ -276,14 +293,22 @@ type E2e {
   """
   Engine version helpers should read dagger.json and write normalized versions.
   """
-  pub engineVersionCheck(ws: Workspace!): Void @check {
+  engineVersionCheck(ws: Workspace!): Void @check {
     let engine = dangSdk.mod(ws, path: lookupModulePath).engine
     let fixed = engine.require(version: "0.21.0")
     let latest = engine.requireLatest
 
     assert(engine.required == "0.20.8", "engine.required should trim a leading v")
-    assertContains(fixed.layer.file(lookupModulePath + "/dagger.json").contents, "\"engineVersion\": \"v0.21.0\"", "engine.require should write a normalized version")
-    assertContains(latest.layer.file(lookupModulePath + "/dagger.json").contents, "\"engineVersion\": \"latest\"", "engine.requireLatest should write latest")
+    assertContains(
+      fixed.layer.file(lookupModulePath + "/dagger.json").contents,
+      "\"engineVersion\": \"v0.21.0\"",
+      "engine.require should write a normalized version",
+    )
+    assertContains(
+      latest.layer.file(lookupModulePath + "/dagger.json").contents,
+      "\"engineVersion\": \"latest\"",
+      "engine.requireLatest should write latest",
+    )
 
     null
   }
@@ -292,7 +317,7 @@ type E2e {
   Dependency listing should preserve how users identify dependencies: string
   entries return their source, named object entries return their name.
   """
-  pub dependencyListCheck(ws: Workspace!): Void @check {
+  dependencyListCheck(ws: Workspace!): Void @check {
     let deps = dangSdk.mod(ws, path: depsModulePath).deps.list
 
     assert(contains(deps, "../dep-string"), "string dependency source was not listed")
@@ -306,7 +331,7 @@ type E2e {
   Dependency edits should update only dagger.json. Users run generate
   separately when they want generated SDK files refreshed.
   """
-  pub dependencyEditCheck(ws: Workspace!): Void @check {
+  dependencyEditCheck(ws: Workspace!): Void @check {
     let deps = dangSdk.mod(ws, path: depsModulePath).deps
 
     let added = deps.add(source: "../dep-new")
@@ -329,7 +354,11 @@ type E2e {
     let sourceRemoved = deps.remove(name: "../dep-source-only")
     assertOnlyConfigChanged(sourceRemoved, depsModulePath + "/dagger.json")
     let sourceRemovedConfig = sourceRemoved.after.file(depsModulePath + "/dagger.json").contents
-    assertNotContains(sourceRemovedConfig, "\"source\": \"../dep-source-only\"", "removing by source left the dependency in dagger.json")
+    assertNotContains(
+      sourceRemovedConfig,
+      "\"source\": \"../dep-source-only\"",
+      "removing by source left the dependency in dagger.json",
+    )
     assertContains(sourceRemovedConfig, "\"name\": \"dep-named\"", "removing by source removed a different dependency")
 
     let updated = deps.update

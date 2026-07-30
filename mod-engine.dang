@@ -15,28 +15,28 @@ type ModEngine {
   """
   The Dagger engine version required by this module, without a leading "v".
   """
-  pub required: String! {
+  required: String! {
     polyfill.workspace(ws).moduleSource("/" + path).config.requiredEngineVersion
   }
 
   """
   Configure this module to require the given Dagger engine version.
   """
-  pub require(version: String!): Changeset! {
+  require(version: String!): Changeset! {
     polyfill.workspace(ws).moduleSource("/" + path).config.withRequiredEngineVersion(version).fork.changes
   }
 
   """
   Configure this module to require the current Dagger engine version.
   """
-  pub requireCurrent: Changeset! {
+  requireCurrent: Changeset! {
     polyfill.workspace(ws).moduleSource("/" + path).config.withCurrentEngineVersion.fork.changes
   }
 
   """
   Configure this module to require the latest stable Dagger engine version.
   """
-  pub requireLatest: Changeset! {
+  requireLatest: Changeset! {
     polyfill.workspace(ws).moduleSource("/" + path).config.withLatestEngineVersion.fork.changes
   }
 }

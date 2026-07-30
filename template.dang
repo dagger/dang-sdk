@@ -5,10 +5,10 @@ type Template {
   """
   Template name passed to init.
   """
-  pub name: String!
+  name: String!
 
   """
   Template source files materialized into the new module before generation.
   """
-  pub source: Directory!
+  source: Directory!
 }
