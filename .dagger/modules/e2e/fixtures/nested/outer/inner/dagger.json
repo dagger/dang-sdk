@@ -1,0 +1,13 @@
+{
+  "name": "nested-inner",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "dang"
+  },
+  "dependencies": [
+    {
+      "name": "nested-outer",
+      "source": ".."
+    }
+  ]
+}

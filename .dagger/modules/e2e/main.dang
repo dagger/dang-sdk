@@ -15,6 +15,10 @@ type E2e {
   let tomlModulePath: String! = fixtureRoot + "/lookup-toml/app"
   let tomlNestedPath: String! = tomlModulePath + "/nested"
   let nonDangTomlModulePath: String! = fixtureRoot + "/lookup-toml/not-dang"
+  # A module nested inside the module it depends on.
+  let nestedRoot: String! = fixtureRoot + "/nested"
+  let nestedOuterPath: String! = nestedRoot + "/outer"
+  let nestedInnerPath: String! = nestedOuterPath + "/inner"
   # A partially migrated tree: an ancestor dagger.json, a nearer dagger-module.toml.
   let mixedOuterPath: String! = fixtureRoot + "/mixed-config/outer"
   let mixedInnerPath: String! = mixedOuterPath + "/inner"
@@ -193,6 +197,29 @@ type E2e {
       contains(changes.addedPaths, nonDangModulePath + "/main.dang") == false,
       "generateAll generated a non-Dang SDK module",
     )
+
+    null
+  }
+
+  """
+  A module nested inside the module it depends on should still generate.
+
+  The engine generates a local dependency by running its owning SDK's generator
+  with the dependency as cwd, which lands back in generate over a cone that
+  still contains the nested module. Only the outermost module in scope stages
+  its dependency closure, so the walk bottoms out; both modules are still
+  generated.
+  """
+  nestedDependencyGenerateCheck(ws: Workspace!): Void @check {
+    let nestedWs = ws
+      .directory("/", include: [nestedRoot + "/**"])
+      .asWorkspace(cwd: nestedOuterPath)
+    let roots = dangSdk.modules(nestedWs).{{rootPath}}.map { mod => mod.rootPath }
+
+    assert(contains(roots, nestedOuterPath), "the enclosing module should be in scope")
+    assert(contains(roots, nestedInnerPath), "the nested module should be in scope")
+
+    assert(dangSdk.generate(nestedWs).isEmpty, "generating a nested dependency tree should be empty")
 
     null
   }

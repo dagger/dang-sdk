@@ -1,0 +1,7 @@
+{
+  "name": "nested-outer",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "dang"
+  }
+}

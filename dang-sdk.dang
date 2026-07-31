@@ -278,10 +278,13 @@ type DangSdk {
   """
   generate(ws: Workspace!): Changeset! @generate {
     let pws = polyfill.workspace(ws)
+    let mods = modules(ws).filter { !_.skipGenerate(ws) }
+    let roots = mods.map { mod => mod.rootPath }
     changeset.withChangesets(
-      modules(ws)
-        .filter { !_.skipGenerate(ws) }
-        .map { mod =>
+      mods.map { mod =>
+        if (enclosedBy(roots, mod.rootPath)) {
+          pws.moduleSource("/" + mod.rootPath).generate
+        } else {
           # Stage this module's local dependency closure first (leaf-first, possibly
           # across SDKs) so its codegen sees up-to-date dependency bindings. The dep
           # codegen is ephemeral: taking the changeset against the staged workspace
@@ -290,7 +293,26 @@ type DangSdk {
             pws.moduleSource("/" + mod.rootPath).core.generateLocalDependencies(ws),
           )
           polyfill.workspace(stagedWs).moduleSource("/" + mod.rootPath).generate
-        },
+        }
+      },
     )
+  }
+
+  """
+  Whether another module in scope encloses the one at `path`.
+
+  Only the outermost modules stage their dependency closure. The engine
+  generates a local dependency by running its owning SDK's generator with the
+  dependency as cwd — which lands back here, over a cone that still contains
+  every module nested under it. Staging those too means a module that depends
+  on an enclosing module restages itself at every level, and the walk never
+  bottoms out.
+  """
+  let enclosedBy(roots: [String!]!, path: String!): Boolean! {
+    roots
+      .filter { root =>
+        root != path and (root == "." or path.trimPrefix(root + "/") != path)
+      }
+      .length > 0
   }
 }

@@ -1,0 +1,5 @@
+type NestedOuter {
+  pub hello: String! {
+    "nested outer"
+  }
+}
