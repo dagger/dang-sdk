@@ -94,9 +94,9 @@ type Mod {
   """
   generate(ws: Workspace!): Changeset! {
     if (skipGenerate(ws)) {
-      polyfill.workspace(ws).fork.changes
+      ws.changes(ws)
     } else {
-      polyfill.workspace(ws).moduleSource("/" + rootPath).generate
+      ws.moduleSource("/" + rootPath).generate(ws).changes(ws)
     }
   }
 }

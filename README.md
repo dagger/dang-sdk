@@ -6,7 +6,7 @@ It powers `dagger module init dang` and exposes the remaining
 module-management operations (generate, dependencies, engine version) through
 `dagger call`.
 
-Backed by [`github.com/dagger/sdk-sdk/polyfill`](https://github.com/dagger/sdk-sdk/tree/main/polyfill).
+It uses the engine's native `Workspace` and `ModuleSource` APIs directly.
 
 ## Install
 

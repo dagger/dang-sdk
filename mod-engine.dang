@@ -16,27 +16,34 @@ type ModEngine {
   The Dagger engine version required by this module, without a leading "v".
   """
   required: String! {
-    polyfill.workspace(ws).moduleSource("/" + path).config.requiredEngineVersion
+    ws.moduleSource("/" + path).engineVersion.trimPrefix("v")
   }
 
   """
   Configure this module to require the given Dagger engine version.
   """
   require(version: String!): Changeset! {
-    polyfill.workspace(ws).moduleSource("/" + path).config.withRequiredEngineVersion(version).fork.changes
+    configChanges(ws, ws.moduleSource("/" + path).withEngineVersion(version))
   }
 
   """
   Configure this module to require the current Dagger engine version.
   """
   requireCurrent: Changeset! {
-    polyfill.workspace(ws).moduleSource("/" + path).config.withCurrentEngineVersion.fork.changes
+    configChanges(ws, ws.moduleSource("/" + path).withEngineVersion(version))
   }
 
   """
   Configure this module to require the latest stable Dagger engine version.
   """
   requireLatest: Changeset! {
-    polyfill.workspace(ws).moduleSource("/" + path).config.withLatestEngineVersion.fork.changes
+    configChanges(ws, ws.moduleSource("/" + path).withEngineVersion("latest"))
+  }
+
+  """
+  Stage a module source's edited dagger.json and return the change.
+  """
+  let configChanges(ws: Workspace!, src: ModuleSource!): Changeset! {
+    ws.withNewDirectory("/", src.updatedConfigDirectory).changes(ws)
   }
 }

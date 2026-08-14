@@ -285,8 +285,8 @@ pub initModule(ws: Workspace!, name: String!, path: String!, template: String! =
   if (currentModule.source.exists("templates/" + selectedTemplate) == false) {
     raise "unknown init template: " + template
   } else {
-    polyfill.workspace(ws).fork
-      .withDirectory(modPath, renderedTemplate(name, selectedTemplate))
+    ws
+      .withNewDirectory(modPath, renderedTemplate(name, selectedTemplate))
       .changes
   }
 }

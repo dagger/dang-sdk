@@ -6,5 +6,23 @@
 [modules.e2e]
 source = ".dagger/modules/e2e"
 
-[modules.dagger-dang-sdk]
+[modules.dang-sdk]
 source = "."
+
+[modules.dang-sdk.as-sdk]
+name = "dang"
+
+[[modules.dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/e2e/fixtures/generate/app"
+
+[[modules.dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/e2e/fixtures/lookup/app"
+
+[[modules.dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/e2e/fixtures/deps/app"
+
+[[modules.dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/e2e/fixtures/skip/app"
+
+[[modules.dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/e2e/fixtures/lookup-toml/app"

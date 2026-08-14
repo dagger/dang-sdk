@@ -225,11 +225,11 @@ type E2e {
   """
   modulesCwdCheck(ws: Workspace!): Void @check {
     # A stable snapshot of the fixtures, re-anchorable at any cwd. Scoped to the
-    # fixture tree so the repo's own Dang modules (this e2e module, the root
-    # dang-sdk module) don't leak into find-up and skew the counts. Keep every
-    # fixture config (both formats, for discovery) and the nested .keep files so
-    # config-less subdirectories survive the include filter.
+    # fixture tree while retaining dagger.toml, which owns the SDK's managed
+    # module registry. Keep the nested .keep files so config-less
+    # subdirectories survive the include filter.
     let root = ws.directory("/", include: [
+      "dagger.toml",
       fixtureRoot + "/**/dagger.json",
       fixtureRoot + "/**/dagger-module.toml",
       fixtureRoot + "/**/.keep",
