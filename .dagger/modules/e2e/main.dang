@@ -8,6 +8,8 @@ type E2e {
   let lookupModulePath: String! = fixtureRoot + "/lookup/app"
   let lookupNestedPath: String! = lookupModulePath + "/nested"
   let nonDangModulePath: String! = fixtureRoot + "/lookup/not-dang"
+  # A module config that declares no runtime at all, not merely a different one.
+  let noRuntimeModulePath: String! = fixtureRoot + "/lookup/no-runtime"
   let skipModulePath: String! = fixtureRoot + "/skip/app"
   let generateModulePath: String! = fixtureRoot + "/generate/app"
   let depsModulePath: String! = fixtureRoot + "/deps/app"
@@ -61,13 +63,16 @@ type E2e {
   }
 
   """
-  Assert that a dependency edit modified only dagger.json.
+  Assert that a config edit touched the module config and nothing else.
   """
   let assertOnlyConfigChanged(changes: Changeset!, path: String!): Void {
-    assert(contains(changes.modifiedPaths, path), "dependency edit did not modify dagger.json")
-    assert(changes.modifiedPaths.length == 1, "dependency edit modified more than dagger.json")
-    assert(changes.addedPaths.length == 0, "dependency edit should not add generated files")
-    assert(changes.removedPaths.length == 0, "dependency edit should not remove generated files")
+    assert(contains(changes.modifiedPaths, path), "config edit did not modify " + path)
+    assert(changes.modifiedPaths.length == 1, "config edit modified more than " + path)
+    assert(changes.addedPaths.length == 0, "config edit should not add files")
+    assert(
+      changes.removedPaths.length == 0,
+      "config edit removed files: " + changes.removedPaths.join(", "),
+    )
   }
 
   """
@@ -127,6 +132,19 @@ type E2e {
   }
 
   """
+  A dagger.json module owned by another runtime should be rejected.
+  """
+  moduleLookupNonDangJsonCheck(ws: Workspace!): Void @check {
+    let message = lookupFailure(ws, nonDangModulePath)
+    let noRuntime = lookupFailure(ws, noRuntimeModulePath)
+
+    assertContains(message, "does not use the Dang SDK", "non-Dang runtime was not rejected: " + message)
+    assertContains(noRuntime, "does not use the Dang SDK", "config without a runtime was not rejected: " + noRuntime)
+
+    null
+  }
+
+  """
   In a partially migrated tree the closest config wins: a nearer
   dagger-module.toml must beat an ancestor's legacy dagger.json.
   """
@@ -171,6 +189,27 @@ type E2e {
   }
 
   """
+  initModule into a directory that already holds files should layer the starter
+  onto it, never replace it: initializing inside an existing project must keep
+  the project.
+  """
+  initOverExistingCheck(ws: Workspace!): Void @check {
+    let changes = dangSdk.initModule(ws, name: "init-over-existing", path: lookupModulePath)
+
+    assert(
+      changes.removedPaths.length == 0,
+      "initModule removed existing files: " + changes.removedPaths.join(", "),
+    )
+    assertContains(
+      changes.after.file(lookupModulePath + "/dagger.json").contents,
+      "\"source\": \"dang\"",
+      "initModule must leave the existing module config in place",
+    )
+
+    null
+  }
+
+  """
   Generating an existing generated-clean Dang module should not produce
   language-side files today.
   """
@@ -178,6 +217,42 @@ type E2e {
     let changes = dangSdk.mod(ws, path: generateModulePath).generate(ws)
 
     assert(changes.isEmpty, "Dang generation should be empty")
+
+    null
+  }
+
+  """
+  Generation should report only what it actually changed.
+
+  `ModuleSource.generate` folds onto the workspace it is handed and the
+  changeset is taken against that same workspace, so a module needing one edit
+  comes back as one path — never as the whole generated context re-reported
+  against an empty baseline.
+  """
+  generateBaselineCheck(ws: Workspace!): Void @check {
+    # Denormalize the config so generation has exactly one thing to fix.
+    let perturbed = ws.withNewFile(
+      "/" + generateModulePath + "/dagger.json",
+      "{\n  \"name\": \"generate-app\",\n  \"engineVersion\": \"latest\",\n  \"sdk\": {\n    \"source\": \"dang\"\n  }\n}\n",
+    )
+    let changes = dangSdk.mod(perturbed, path: generateModulePath).generate(perturbed)
+
+    assert(
+      contains(changes.modifiedPaths, generateModulePath + "/dagger.json"),
+      "generate should report the config it normalized",
+    )
+    assert(
+      changes.modifiedPaths.length == 1,
+      "generate reported more than it changed: " + changes.modifiedPaths.join(", "),
+    )
+    assert(
+      changes.addedPaths.length == 0,
+      "generate re-reported existing files as added: " + changes.addedPaths.join(", "),
+    )
+    assert(
+      changes.removedPaths.length == 0,
+      "generate reported removals: " + changes.removedPaths.join(", "),
+    )
 
     null
   }
@@ -225,11 +300,11 @@ type E2e {
   """
   modulesCwdCheck(ws: Workspace!): Void @check {
     # A stable snapshot of the fixtures, re-anchorable at any cwd. Scoped to the
-    # fixture tree so the repo's own Dang modules (this e2e module, the root
-    # dang-sdk module) don't leak into find-up and skew the counts. Keep every
-    # fixture config (both formats, for discovery) and the nested .keep files so
-    # config-less subdirectories survive the include filter.
+    # fixture tree while retaining dagger.toml, which owns the SDK's managed
+    # module registry. Keep the nested .keep files so config-less
+    # subdirectories survive the include filter.
     let root = ws.directory("/", include: [
+      "dagger.toml",
       fixtureRoot + "/**/dagger.json",
       fixtureRoot + "/**/dagger-module.toml",
       fixtureRoot + "/**/.keep",
@@ -287,6 +362,21 @@ type E2e {
     assert(mod.skipGenerate(ws), "skip marker was not detected")
     assert(changes.isEmpty, "generate returned changes for a skipped module")
 
+    # The marker is found relative to the module, not to the caller. Anchored
+    # at a cwd that the marker's directory does not contain, a cwd-relative
+    # lookup walks a branch the marker is not on and misses it.
+    let snapshot = ws.directory("/", include: [
+      "dagger.toml",
+      fixtureRoot + "/**/dagger.json",
+      fixtureRoot + "/**/dagger-module.toml",
+      fixtureRoot + "/**/" + dangSdk.skipGenerateFilename,
+    ])
+    let fromFixtures = snapshot.asWorkspace(cwd: fixtureRoot)
+    assert(
+      dangSdk.mod(fromFixtures, path: "skip/app").skipGenerate(fromFixtures),
+      "skip marker was missed when the cwd sits above it",
+    )
+
     null
   }
 
@@ -297,17 +387,31 @@ type E2e {
     let engine = dangSdk.mod(ws, path: lookupModulePath).engine
     let fixed = engine.require(version: "0.21.0")
     let latest = engine.requireLatest
+    let latestConfig = latest.layer.file(lookupModulePath + "/dagger.json").contents
 
     assert(engine.required == "0.20.8", "engine.required should trim a leading v")
+    assertOnlyConfigChanged(fixed, lookupModulePath + "/dagger.json")
     assertContains(
       fixed.layer.file(lookupModulePath + "/dagger.json").contents,
       "\"engineVersion\": \"v0.21.0\"",
       "engine.require should write a normalized version",
     )
-    assertContains(
-      latest.layer.file(lookupModulePath + "/dagger.json").contents,
+    # The engine resolves "latest" as it writes the config, so what lands is a
+    # concrete release, never the alias.
+    assertNotContains(
+      latestConfig,
       "\"engineVersion\": \"latest\"",
-      "engine.requireLatest should write latest",
+      "engine.requireLatest should resolve the latest alias",
+    )
+    assertNotContains(
+      latestConfig,
+      "\"engineVersion\": \"v0.20.8\"",
+      "engine.requireLatest should move the pin off the fixture version",
+    )
+    assertContains(
+      latestConfig,
+      "\"engineVersion\": \"v",
+      "engine.requireLatest should write a concrete version",
     )
 
     null
@@ -364,6 +468,39 @@ type E2e {
     let updated = deps.update
     assert(updated.isEmpty, "updating only local dependencies should not edit dagger.json")
 
+    # An explicit target that cannot be updated must say so; silently returning
+    # an empty changeset would look like a successful no-op.
+    assertContains(
+      updateFailure(ws, "github.com/dagger/not-a-dependency"),
+      "is not in the dependency list",
+      "updating an unknown dependency should fail",
+    )
+    assertContains(
+      updateFailure(ws, "dep-named"),
+      "updating a local dependency is not supported",
+      "updating a local dependency should fail",
+    )
+    assertContains(
+      updateFailure(ws, "github.com/dagger/not-a-dependency@v1.2.3"),
+      "is not in the dependency list",
+      "a versioned target should be matched on its source, not the whole string",
+    )
+    assertContains(
+      updateFailure(ws, "../dep-string"),
+      "updating a local dependency is not supported",
+      "updating a local dependency by its declared source should fail",
+    )
+
     null
+  }
+
+  """
+  Return the error message raised while updating a dependency, or the paths it
+  changed when the update unexpectedly succeeds.
+  """
+  let updateFailure(ws: Workspace!, name: String!): String! {
+    dangSdk.mod(ws, path: depsModulePath).deps.update(name: name).modifiedPaths.join(",") rescue {
+      err: Error => err.message
+    }
   }
 }

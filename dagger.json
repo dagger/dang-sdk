@@ -1,14 +1,7 @@
 {
   "name": "dang-sdk",
-  "engineVersion": "v1.0.0-0",
+  "engineVersion": "v1.0.0-beta.10",
   "sdk": {
     "source": "dang"
-  },
-  "dependencies": [
-    {
-      "name": "polyfill",
-      "source": "github.com/dagger/polyfill@main",
-      "pin": "ec3ea84a2351b4beb06ecece951f2e5ef66509ff"
-    }
-  ]
+  }
 }
