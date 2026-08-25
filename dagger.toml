@@ -6,5 +6,27 @@
 [modules.e2e]
 source = ".dagger/modules/e2e"
 
-[modules.dagger-dang-sdk]
+[modules.dang-sdk]
 source = "."
+
+# Registering this module as the "dang" SDK is what lets it resolve its managed
+# modules through currentModule.asSDK. The e2e fixtures below are registered for
+# the same reason: the SDK reads its module list from this registry, so a fixture
+# the checks expect to discover has to be declared here.
+[modules.dang-sdk.as-sdk]
+name = "dang"
+
+[[modules.dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/e2e/fixtures/generate/app"
+
+[[modules.dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/e2e/fixtures/lookup/app"
+
+[[modules.dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/e2e/fixtures/deps/app"
+
+[[modules.dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/e2e/fixtures/skip/app"
+
+[[modules.dang-sdk.as-sdk.modules]]
+path = ".dagger/modules/e2e/fixtures/lookup-toml/app"

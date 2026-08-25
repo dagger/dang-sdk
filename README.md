@@ -6,7 +6,7 @@ It powers `dagger module init dang` and exposes the remaining
 module-management operations (generate, dependencies, engine version) through
 `dagger call`.
 
-Backed by [`github.com/dagger/sdk-sdk/polyfill`](https://github.com/dagger/sdk-sdk/tree/main/polyfill).
+It uses the engine's native `Workspace` and `ModuleSource` APIs directly.
 
 ## Install
 
@@ -53,7 +53,7 @@ you're in and the projects beneath it — skipping any with a
 `.dagger-dang-sdk-skip-generate` marker at or above the module root:
 
 ```sh
-dagger call dang-sdk generate-all
+dagger call dang-sdk generate
 ```
 
 ## Manage Dependencies
@@ -103,16 +103,16 @@ dagger call dang-sdk mod --path my-module engine require --version 0.20.8
 # Pin to the engine version you're currently running
 dagger call dang-sdk mod --path my-module engine require-current
 
-# Pin to "latest"
+# Pin to the latest release the engine knows about
 dagger call dang-sdk mod --path my-module engine require-latest
 ```
 
 ## Discover Modules In A Workspace
 
-Discovery is anchored at your current directory, not the workspace root: the
-nearest enclosing module plus every Dang module beneath you. Modules configured
-by the legacy `dagger.json` and the CLI 1.0 `dagger-module.toml` are both found.
-Paths print relative to where you invoked the command.
+Listing covers the Dang modules your workspace registers under this SDK in
+`dagger.toml`, scoped to your current directory rather than the workspace root:
+every registered module at or below you, plus the nearest enclosing one. Paths
+print relative to where you invoked the command.
 
 ```sh
 dagger call dang-sdk modules path

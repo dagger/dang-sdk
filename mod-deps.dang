@@ -16,31 +16,197 @@ type ModDeps {
   Return dependency names when present, otherwise dependency sources.
   """
   list: [String!]! {
-    polyfill.workspace(ws).moduleSource("/" + path).config.dependencies
+    dependencyEntries
+      .map { dep => dependencyName(dep) }
+      .filter { dep => dep != "" }
   }
 
   """
   Add a Dagger dependency to dagger.json.
   """
   add(source: String!, name: String! = ""): Changeset! {
-    polyfill.workspace(ws).moduleSource("/" + path).config.withDependency(
-      source,
-      name,
-    ).fork.changes
+    # Write the declared entry verbatim, like dagger.json holds it: dependency
+    # sources are module-root-relative strings, and resolving them from module
+    # code needs a host session local paths don't have here.
+    let entry = if (name == "") {
+      toString(JSON.encode(source))
+    } else {
+      toString(JSON.encode({{name, source}}))
+    }
+    writeDependencyEntries(dependencyEntries + [entry])
   }
 
   """
   Remove a Dagger dependency from dagger.json by name or source.
   """
   remove(name: String!): Changeset! {
-    polyfill.workspace(ws).moduleSource("/" + path).config.withoutDependency(name).fork.changes
+    writeDependencyEntries(
+      dependencyEntries.filter { dependency =>
+        dependencyName(dependency) != name and dependencySource(dependency) != name
+      },
+    )
   }
 
   """
   Update one dependency by name or source, or update all remote dependencies in
   dagger.json.
+
+  A dependency answers to the same identifiers the engine matches on: its
+  module name, its source, or its source at a version. Naming a version
+  re-pins the dependency to it.
   """
   update(name: String! = ""): Changeset! {
-    polyfill.workspace(ws).moduleSource("/" + path).config.withUpdatedDependencies(name).fork.changes
+    let src = ws.moduleSource("/" + path)
+    # A target is "<source-or-name>[@<version>]": the part before the version
+    # identifies the dependency, the version says what to re-pin it to.
+    let requestedVersion = name.split("@").dropFirst(1).join("@")
+    let target = sourceRef(name, requestedVersion)
+    let matched = src.dependencies
+      .{{moduleName, pin, asString, version}}
+      .filter { dep =>
+        name == ""
+          or dep.moduleName == target
+          or sourceRef(dep.asString, dep.version) == target
+          or sourceRef(dep.asString, dep.version) + "@" + dep.pin == target
+      }
+    # Only a pinned dependency carries a ref that can be resolved again; the
+    # engine's own update refuses local ones for the same reason.
+    let updatable = matched.filter { dep => dep.pin != "" }
+
+    if (updatable.length > 0) {
+      configChanges(
+        src.withDependencies(
+          updatable.map { dep =>
+            moduleSource(
+              refString: if (requestedVersion == "") {
+                dep.asString
+              } else {
+                sourceRef(dep.asString, dep.version) + "@" + requestedVersion
+              },
+            )
+          },
+        ),
+      )
+    } else if (name == "") {
+      # Nothing to update — return an empty change instead of a config
+      # rewrite, so updating only local dependencies leaves dagger.json alone.
+      ws.changes(ws)
+    } else if (matched.length > 0 or isDeclared(target)) {
+      raise "updating a local dependency is not supported: " + name
+    } else {
+      raise "dependency requested for update is not in the dependency list: " + name
+    }
+  }
+
+  """
+  Whether the config declares a dependency under this name or source.
+
+  A local dependency reaches module code without a resolvable ref, so the
+  declared config is the only place left to recognize the caller's target.
+  """
+  let isDeclared(name: String!): Boolean! {
+    dependencyEntries.filter { dependency =>
+      dependencyName(dependency) == name or dependencySource(dependency) == name
+    }.length > 0
+  }
+
+  """
+  Return a dependency ref stripped of its version:
+  "github.com/o/m@v1" -> "github.com/o/m".
+  """
+  let sourceRef(asString: String!, version: String!): String! {
+    if (version == "") { asString } else { asString.trimSuffix("@" + version) }
+  }
+
+  """
+  Stage a module source's edited config and return the change.
+  """
+  let configChanges(src: ModuleSource!): Changeset! {
+    # updatedConfigDirectory carries only the config file, and withNewDirectory
+    # replaces whatever it writes over — so layer the config onto the module
+    # directory rather than substituting for it.
+    ws.withNewDirectory(
+      "/" + path,
+      existingDir.withDirectory(".", src.updatedConfigDirectory.directory(path)),
+    ).changes(ws)
+  }
+
+  """
+  This module's directory as it stands in the workspace, empty when it does not
+  exist yet.
+  """
+  let existingDir: Directory! {
+    let filtered = ws.directory("/", include: [path + "/**"])
+    if (filtered.exists(path)) { filtered.directory(path) } else { directory }
+  }
+
+  """
+  Return this module's dagger.json path from the workspace root.
+  """
+  let configPath: String! {
+    if (path == ".") { "dagger.json" } else { path + "/dagger.json" }
+  }
+
+  """
+  Return each dependency entry of dagger.json as raw JSON text, straight from
+  the declared config — a plain string entry stays a string.
+  """
+  let dependencyEntries: [String!]! {
+    let config = json.withContents(ws.file("/" + configPath).contents :: Dagger.JSON!)
+    if (config.fields.contains("dependencies") == true) {
+      let dependencies = config.field(["dependencies"])
+      if (toString(dependencies.contents) == "null") {
+        []
+      } else {
+        dependencies
+          .asArray.{{contents}}
+          .map { dependency => toString(dependency.contents) }
+      }
+    } else {
+      []
+    }
+  }
+
+  """
+  Return the dependency's configured name, or its source if no name is set.
+  """
+  let dependencyName(dependency: String!): String! {
+    let value = json.withContents(dependency :: Dagger.JSON!)
+    if (dependency.hasPrefix("\"")) {
+      value.asString
+    } else if (value.fields.contains("name") == true) {
+      value.field(["name"]).asString
+    } else if (value.fields.contains("source") == true) {
+      value.field(["source"]).asString
+    } else {
+      ""
+    }
+  }
+
+  """
+  Return the dependency source of a config entry.
+  """
+  let dependencySource(dependency: String!): String! {
+    let value = json.withContents(dependency :: Dagger.JSON!)
+    if (dependency.hasPrefix("\"")) {
+      value.asString
+    } else if (value.fields.contains("source") == true) {
+      value.field(["source"]).asString
+    } else {
+      ""
+    }
+  }
+
+  """
+  Stage dagger.json with the given dependency entries as its dependencies.
+  """
+  let writeDependencyEntries(dependencies: [String!]!): Changeset! {
+    let config = json.withContents(ws.file("/" + configPath).contents :: Dagger.JSON!)
+    let updated = config.withField(
+      ["dependencies"],
+      json.withContents(("[" + dependencies.join(",") + "]") :: Dagger.JSON!),
+    )
+    let contents = toString(updated.contents(pretty: true)) + "\n"
+    ws.withNewFile("/" + configPath, contents).changes(ws)
   }
 }

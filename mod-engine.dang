@@ -16,27 +16,53 @@ type ModEngine {
   The Dagger engine version required by this module, without a leading "v".
   """
   required: String! {
-    polyfill.workspace(ws).moduleSource("/" + path).config.requiredEngineVersion
+    ws.moduleSource("/" + path).engineVersion.trimPrefix("v")
   }
 
   """
   Configure this module to require the given Dagger engine version.
   """
   require(version: String!): Changeset! {
-    polyfill.workspace(ws).moduleSource("/" + path).config.withRequiredEngineVersion(version).fork.changes
+    configChanges(ws.moduleSource("/" + path).withEngineVersion(version))
   }
 
   """
-  Configure this module to require the current Dagger engine version.
+  Configure this module to require the exact engine version now running,
+  build metadata included.
   """
   requireCurrent: Changeset! {
-    polyfill.workspace(ws).moduleSource("/" + path).config.withCurrentEngineVersion.fork.changes
+    configChanges(ws.moduleSource("/" + path).withEngineVersion(version))
   }
 
   """
   Configure this module to require the latest stable Dagger engine version.
+
+  The engine resolves the "latest" alias while writing the config, so the
+  module ends up pinned to a concrete release rather than to the alias.
   """
   requireLatest: Changeset! {
-    polyfill.workspace(ws).moduleSource("/" + path).config.withLatestEngineVersion.fork.changes
+    configChanges(ws.moduleSource("/" + path).withEngineVersion("latest"))
+  }
+
+  """
+  Stage a module source's edited config and return the change.
+  """
+  let configChanges(src: ModuleSource!): Changeset! {
+    # updatedConfigDirectory carries only the config file, and withNewDirectory
+    # replaces whatever it writes over — so layer the config onto the module
+    # directory rather than substituting for it.
+    ws.withNewDirectory(
+      "/" + path,
+      existingDir.withDirectory(".", src.updatedConfigDirectory.directory(path)),
+    ).changes(ws)
+  }
+
+  """
+  This module's directory as it stands in the workspace, empty when it does not
+  exist yet.
+  """
+  let existingDir: Directory! {
+    let filtered = ws.directory("/", include: [path + "/**"])
+    if (filtered.exists(path)) { filtered.directory(path) } else { directory }
   }
 }

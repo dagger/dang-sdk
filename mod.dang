@@ -25,7 +25,7 @@ type Mod {
   shell user would.
   """
   path: String! {
-    let cwd = moduleCwd(ws)
+    let cwd = normalizePath(ws.cwd)
     if (rootPath == cwd) {
       "."
     } else if (cwd == ".") {
@@ -41,16 +41,11 @@ type Mod {
   }
 
   """
-  Return the caller cwd as a workspace-root-relative path, "." at the root.
+  Return a workspace path as a root-relative one, "." at the root.
   """
-  let moduleCwd(ws: Workspace!): String! {
-    let found = ws.findUp(name: ".", from: ".")
-    if (found == null or found == "/") {
-      "."
-    } else {
-      let rel = found.trimPrefix("/")
-      if (rel == "") { "." } else { rel }
-    }
+  let normalizePath(path: String!): String! {
+    let trimmed = path.trimPrefix("/").trimSuffix("/")
+    if (trimmed == "") { "." } else { trimmed }
   }
 
   """
@@ -84,7 +79,9 @@ type Mod {
   Whether this module root or an ancestor contains a marker filename.
   """
   let hasMarker(ws: Workspace!, filename: String!): Boolean! {
-    let markerPath = ws.findUp(name: filename, from: rootPath)
+    # rootPath is workspace-root-relative, so anchor it: findUp resolves a
+    # relative start from the caller's cwd, which would walk the wrong branch.
+    let markerPath = ws.findUp(name: filename, from: "/" + rootPath)
     markerPath != null
   }
 
@@ -94,9 +91,9 @@ type Mod {
   """
   generate(ws: Workspace!): Changeset! {
     if (skipGenerate(ws)) {
-      polyfill.workspace(ws).fork.changes
+      ws.changes(ws)
     } else {
-      polyfill.workspace(ws).moduleSource("/" + rootPath).generate
+      ws.moduleSource("/" + rootPath).generate(ws).changes(ws)
     }
   }
 }

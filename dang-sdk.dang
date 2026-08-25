@@ -8,89 +8,16 @@ type DangSdk {
   skipGenerateFilename: String! = ".dagger-dang-sdk-skip-generate"
 
   """
-  Config that marks a Dang module: a legacy dagger.json whose sdk.source is
-  "dang", or a CLI 1.0 dagger-module.toml whose [runtime] source is "dang".
-  """
-  let legacyConfigPattern: String! = "\"sdk\"\\s*:\\s*\\{[^}]*\"source\"\\s*:\\s*\"dang\""
-  let tomlConfigPattern: String! = "\\[runtime\\][^\\[]*source\\s*=\\s*\"dang\""
-  let moduleConfigFilenames: [String!]! = ["dagger-module.toml", "dagger.json"]
-
-  """
-  Return every Dang SDK module visible from the client's current location.
-
-  Discovery is anchored at the client's cwd, not the workspace root: the
-  nearest enclosing module plus every Dang module at or below the cwd. Running
-  from a subdirectory acts on the project you're in — and the projects beneath
-  it — not the whole workspace. A module is Dang whether it is configured by
-  the legacy dagger.json or the CLI 1.0 dagger-module.toml.
+  Return every managed Dang SDK module in the client's cwd scope: every module
+  at or below the cwd, plus the nearest enclosing module when the cwd itself is
+  not managed. The engine selects this directly from the workspace's registered
+  SDK modules; no filesystem discovery is required.
   """
   modules(ws: Workspace!): [Mod!]! {
-    let cwd = workspaceCwd(ws)
-    let dangDirs = dangModuleDirs(ws)
-    polyfill
-      .workspace(ws)
-      .findConfigDirs(moduleConfigFilenames)
-      .map { dir => workspacePath(cwd, dir) }
-      .uniq
-      .filter { path => dangDirs.filter { dir => dir == path }.length > 0 }
-      .map { path => Mod(rootPath: path, ws: ws, skipGenerateFilename: skipGenerateFilename) }
-  }
-
-  """
-  Return the workspace-root-relative directory of every module whose config
-  declares the Dang runtime, found by content search across both formats.
-  """
-  let dangModuleDirs(ws: Workspace!): [String!]! {
-    let root = ws.directory("/", include: moduleConfigFilenames.map { name => "**/" + name })
-    let jsonDirs = root
-      .search(
-        pattern: legacyConfigPattern,
-        globs: ["**/dagger.json"],
-        filesOnly: true,
-        multiline: true,
-        dotall: true,
-      ).{{filePath}}
-      .map { match => configDir(match.filePath, "dagger.json") }
-    let tomlDirs = root
-      .search(
-        pattern: tomlConfigPattern,
-        globs: ["**/dagger-module.toml"],
-        filesOnly: true,
-        multiline: true,
-        dotall: true,
-      ).{{filePath}}
-      .map { match => configDir(match.filePath, "dagger-module.toml") }
-    (jsonDirs + tomlDirs).uniq
-  }
-
-  """
-  Return the caller cwd as a workspace-root-relative path, "." at the root.
-
-  Uses the polyfill's findUp trick so the helper stays valid on engines that
-  don't expose Workspace.cwd.
-  """
-  let workspaceCwd(ws: Workspace!): String! {
-    let found = ws.findUp(name: ".", from: ".")
-    if (found == null or found == "/") { "." } else { normalizePath(found) }
-  }
-
-  """
-  Resolve a cwd-relative config dir — at or below the cwd ("." , "sub/dir") or
-  a strict ancestor (".." , "../..") — against the cwd into a
-  workspace-root-relative path.
-  """
-  let workspacePath(cwd: String!, path: String!): String! {
-    let base = if (cwd == ".") { [] } else { cwd.split("/") }
-    let segments = path.split("/").reduce(base) { acc, segment =>
-      if (segment == "..") {
-        acc.dropLast(1)
-      } else if (segment == "." or segment == "") {
-        acc
-      } else {
-        acc + [segment]
-      }
-    }
-    if (segments.length == 0) { "." } else { segments.join("/") }
+    currentModule
+      .asSDK(workspace: ws)
+      .modules.{{path}}
+      .map { module => Mod(rootPath: module.path, ws: ws, skipGenerateFilename: skipGenerateFilename) }
   }
 
   """
@@ -168,9 +95,9 @@ type DangSdk {
       if (tomlBase == null and jsonBase == null) {
         raise "no Dagger module found containing path: " + path
       } else if (tomlBase != null and pathDepth(tomlBase) >= pathDepth(jsonBase)) {
-        validateConfig(ws, tomlBase, "dagger-module.toml", tomlConfigPattern, path)
+        validateConfig(ws, tomlBase, path)
       } else if (jsonBase != null) {
-        validateConfig(ws, jsonBase, "dagger.json", legacyConfigPattern, path)
+        validateConfig(ws, jsonBase, path)
       } else {
         raise "no Dagger module found containing path: " + path
       }
@@ -186,23 +113,17 @@ type DangSdk {
   }
 
   """
-  Confirm the config at `base` declares the Dang runtime, returning `base`, or
+  Confirm the module at `base` declares the Dang runtime, returning `base`, or
   raise naming the requested path when it does not.
+
+  The engine parses whichever config format the module uses, so this reads the
+  declared runtime rather than searching either file's text.
   """
-  let validateConfig(
-    ws: Workspace!,
-    base: String!,
-    filename: String!,
-    pattern: String!,
-    requestedPath: String!,
-  ): String! {
-    let configPath = if (base == ".") { filename } else { base + "/" + filename }
-    let matches = ws
-      .directory("/", include: [configPath])
-      .file(configPath)
-      .search(pattern: pattern, multiline: true, dotall: true, limit: 1).{{id}}
-      .length > 0
-    if (matches) {
+  let validateConfig(ws: Workspace!, base: String!, requestedPath: String!): String! {
+    # A config that declares no runtime at all has no sdk to read, so treat an
+    # unreadable runtime the same as a foreign one.
+    let runtime = ws.moduleSource("/" + base).sdk.source rescue { err: Error => "" }
+    if (runtime == "dang") {
       base
     } else {
       raise "Dagger module does not use the Dang SDK: " + requestedPath
@@ -241,12 +162,24 @@ type DangSdk {
     if (currentModule.source.exists("templates/" + selectedTemplate) == false) {
       raise "unknown init template: " + template
     } else {
-      polyfill
-        .workspace(ws)
-        .fork
-        .withDirectory(modPath, renderedTemplate(name, selectedTemplate))
-        .changes
+      # withNewDirectory replaces the directory it writes over, so layer the
+      # starter onto whatever is already at the path: initializing inside an
+      # existing project must not delete the project.
+      ws
+        .withNewDirectory(
+          "/" + modPath,
+          existingDir(ws, modPath).withDirectory(".", renderedTemplate(name, selectedTemplate)),
+        )
+        .changes(ws)
     }
+  }
+
+  """
+  The workspace directory at `path`, empty when nothing is there yet.
+  """
+  let existingDir(ws: Workspace!, path: String!): Directory! {
+    let filtered = ws.directory("/", include: [path + "/**"])
+    if (filtered.exists(path)) { filtered.directory(path) } else { directory }
   }
 
   """
@@ -277,20 +210,6 @@ type DangSdk {
   silently keeping whichever module happened to be generated last.
   """
   generate(ws: Workspace!): Changeset! @generate {
-    let pws = polyfill.workspace(ws)
-    changeset.withChangesets(
-      modules(ws)
-        .filter { !_.skipGenerate(ws) }
-        .map { mod =>
-          # Stage this module's local dependency closure first (leaf-first, possibly
-          # across SDKs) so its codegen sees up-to-date dependency bindings. The dep
-          # codegen is ephemeral: taking the changeset against the staged workspace
-          # cancels it out, leaving only each module's own changes.
-          let stagedWs = ws.withChanges(
-            pws.moduleSource("/" + mod.rootPath).core.generateLocalDependencies(ws),
-          )
-          polyfill.workspace(stagedWs).moduleSource("/" + mod.rootPath).generate
-        },
-    )
+    changeset.withChangesets(modules(ws).map { mod => mod.generate(ws) })
   }
 }
