@@ -122,22 +122,9 @@ type ModDeps {
   Stage a module source's edited config and return the change.
   """
   let configChanges(src: ModuleSource!): Changeset! {
-    # updatedConfigDirectory carries only the config file, and withNewDirectory
-    # replaces whatever it writes over — so layer the config onto the module
-    # directory rather than substituting for it.
-    ws.withNewDirectory(
-      "/" + path,
-      existingDir.withDirectory(".", src.updatedConfigDirectory.directory(path)),
-    ).changes(ws)
-  }
-
-  """
-  This module's directory as it stands in the workspace, empty when it does not
-  exist yet.
-  """
-  let existingDir: Directory! {
-    let filtered = ws.directory("/", include: [path + "/**"])
-    if (filtered.exists(path)) { filtered.directory(path) } else { directory }
+    # updatedConfigDirectory carries only the config file, never the rest of the
+    # module, so this has to merge rather than replace.
+    ws.withDirectory("/" + path, src.updatedConfigDirectory.directory(path)).changes(ws)
   }
 
   """

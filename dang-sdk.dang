@@ -162,24 +162,10 @@ type DangSdk {
     if (currentModule.source.exists("templates/" + selectedTemplate) == false) {
       raise "unknown init template: " + template
     } else {
-      # withNewDirectory replaces the directory it writes over, so layer the
-      # starter onto whatever is already at the path: initializing inside an
-      # existing project must not delete the project.
-      ws
-        .withNewDirectory(
-          "/" + modPath,
-          existingDir(ws, modPath).withDirectory(".", renderedTemplate(name, selectedTemplate)),
-        )
-        .changes(ws)
+      # Merge, never replace: initializing inside an existing project must not
+      # delete the project.
+      ws.withDirectory("/" + modPath, renderedTemplate(name, selectedTemplate)).changes(ws)
     }
-  }
-
-  """
-  The workspace directory at `path`, empty when nothing is there yet.
-  """
-  let existingDir(ws: Workspace!, path: String!): Directory! {
-    let filtered = ws.directory("/", include: [path + "/**"])
-    if (filtered.exists(path)) { filtered.directory(path) } else { directory }
   }
 
   """
