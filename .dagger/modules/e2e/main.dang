@@ -23,16 +23,6 @@ type E2e {
   let mixedNestedPath: String! = mixedInnerPath + "/nested"
 
   """
-  Fail the current check when a condition is false.
-  """
-  let assert(condition: Boolean!, message: String!): Void {
-    if (condition == false) {
-      raise message
-    }
-    null
-  }
-
-  """
   Return true when a list contains the exact string.
   """
   let contains(values: [String!]!, want: String!): Boolean! {
@@ -45,34 +35,41 @@ type E2e {
   Assert that a string contains a substring.
   """
   let assertContains(value: String!, want: String!, message: String!): Void {
-    assert(value.contains(want), message)
+    assert(message) { value.contains(want) }
   }
 
   """
   Assert that a string does not contain a substring.
   """
   let assertNotContains(value: String!, want: String!, message: String!): Void {
-    assert(value.contains(want) == false, message)
+    assert(message) { value.contains(want) == false }
   }
 
   """
   Assert that a config edit touched the module config and nothing else.
   """
   let assertOnlyConfigChanged(changes: Changeset!, path: String!): Void {
-    assert(contains(changes.modifiedPaths, path), "config edit did not modify " + path)
-    assert(changes.modifiedPaths.length == 1, "config edit modified more than " + path)
-    assert(changes.addedPaths.length == 0, "config edit should not add files")
-    assert(
-      changes.removedPaths.length == 0,
-      "config edit removed files: " + changes.removedPaths.join(", "),
-    )
+    assert("config edit did not modify " + path) {
+      contains(changes.modifiedPaths, path)
+    }
+    assert("config edit modified more than " + path) {
+      changes.modifiedPaths.length == 1
+    }
+    assert("config edit should not add files") {
+      changes.addedPaths.length == 0
+    }
+    assert("config edit removed files: " + changes.removedPaths.join(", ")) {
+      changes.removedPaths.length == 0
+    }
   }
 
   """
   The helper should expose the generate skip marker used by callers.
   """
   skipGenerateFilenameCheck: Void @check {
-    assert(dangSdk.skipGenerateFilename == ".dagger-dang-sdk-skip-generate", "skip marker filename changed")
+    assert("skip marker filename changed") {
+      dangSdk.skipGenerateFilename == ".dagger-dang-sdk-skip-generate"
+    }
 
     null
   }
@@ -84,8 +81,12 @@ type E2e {
     let nested = dangSdk.mod(ws, path: lookupNestedPath)
     let exact = dangSdk.mod(ws, path: lookupModulePath, findUp: false)
 
-    assert(nested.rootPath == lookupModulePath, "find-up lookup returned the wrong module path")
-    assert(exact.rootPath == lookupModulePath, "exact lookup returned the wrong module path")
+    assert("find-up lookup returned the wrong module path") {
+      nested.rootPath == lookupModulePath
+    }
+    assert("exact lookup returned the wrong module path") {
+      exact.rootPath == lookupModulePath
+    }
 
     null
   }
@@ -107,8 +108,12 @@ type E2e {
     let nested = dangSdk.mod(ws, path: tomlNestedPath)
     let exact = dangSdk.mod(ws, path: tomlModulePath, findUp: false)
 
-    assert(nested.rootPath == tomlModulePath, "find-up lookup returned the wrong dagger-module.toml module path")
-    assert(exact.rootPath == tomlModulePath, "exact lookup returned the wrong dagger-module.toml module path")
+    assert("find-up lookup returned the wrong dagger-module.toml module path") {
+      nested.rootPath == tomlModulePath
+    }
+    assert("exact lookup returned the wrong dagger-module.toml module path") {
+      exact.rootPath == tomlModulePath
+    }
 
     null
   }
@@ -144,7 +149,9 @@ type E2e {
   mixedConfigLookupCheck(ws: Workspace!): Void @check {
     let nested = dangSdk.mod(ws, path: mixedNestedPath)
 
-    assert(nested.rootPath == mixedInnerPath, "closest config did not win; resolved to " + nested.rootPath)
+    assert("closest config did not win; resolved to " + nested.rootPath) {
+      nested.rootPath == mixedInnerPath
+    }
 
     null
   }
@@ -157,8 +164,12 @@ type E2e {
     let nested = ws.withWorkdir(tomlNestedPath)
     let otherRuntime = ws.withWorkdir(nonDangTomlModulePath)
 
-    assert(dangSdk.detectScope(nested) == tomlModulePath, "detectScope returned the wrong Dang scope")
-    assert(dangSdk.detectScope(otherRuntime) == "", "detectScope returned a scope for another runtime")
+    assert("detectScope returned the wrong Dang scope") {
+      dangSdk.detectScope(nested) == tomlModulePath
+    }
+    assert("detectScope returned a scope for another runtime") {
+      dangSdk.detectScope(otherRuntime) == ""
+    }
 
     null
   }
@@ -183,7 +194,9 @@ type E2e {
     assertContains(manifest, "name = \"init-module\"", "generateScope wrote the wrong module name")
     assertContains(manifest, "source = \"dang\"", "generateScope wrote the wrong runtime")
     assertContains(generated.file("main.dang").contents, "type InitModule {", "minimal template did not render the module type")
-    assert(generated.file("keep.txt").contents == "keep\n", "generateScope removed an existing file")
+    assert("generateScope removed an existing file") {
+      generated.file("keep.txt").contents == "keep\n"
+    }
 
     null
   }
@@ -210,11 +223,12 @@ type E2e {
       clients: [],
     )
 
-    assert(regenerated.file("main.dang").contents == "type Preserved {}\n", "regeneration replaced existing source")
-    assert(
-      regenerated.file("dagger-module.toml").contents == initialized.file("dagger-module.toml").contents,
-      "regeneration replaced the existing manifest",
-    )
+    assert("regeneration replaced existing source") {
+      regenerated.file("main.dang").contents == "type Preserved {}\n"
+    }
+    assert("regeneration replaced the existing manifest") {
+      regenerated.file("dagger-module.toml").contents == initialized.file("dagger-module.toml").contents
+    }
 
     null
   }
@@ -260,7 +274,7 @@ type E2e {
   generateCheck(ws: Workspace!): Void @check {
     let changes = dangSdk.mod(ws, path: generateModulePath).generate(ws)
 
-    assert(changes.isEmpty, "Dang generation should be empty")
+    assert("Dang generation should be empty") { changes.isEmpty }
 
     null
   }
@@ -281,22 +295,18 @@ type E2e {
     )
     let changes = dangSdk.mod(perturbed, path: generateModulePath).generate(perturbed)
 
-    assert(
-      contains(changes.modifiedPaths, generateModulePath + "/dagger.json"),
-      "generate should report the config it normalized",
-    )
-    assert(
-      changes.modifiedPaths.length == 1,
-      "generate reported more than it changed: " + changes.modifiedPaths.join(", "),
-    )
-    assert(
-      changes.addedPaths.length == 0,
-      "generate re-reported existing files as added: " + changes.addedPaths.join(", "),
-    )
-    assert(
-      changes.removedPaths.length == 0,
-      "generate reported removals: " + changes.removedPaths.join(", "),
-    )
+    assert("generate should report the config it normalized") {
+      contains(changes.modifiedPaths, generateModulePath + "/dagger.json")
+    }
+    assert("generate reported more than it changed: " + changes.modifiedPaths.join(", ")) {
+      changes.modifiedPaths.length == 1
+    }
+    assert("generate re-reported existing files as added: " + changes.addedPaths.join(", ")) {
+      changes.addedPaths.length == 0
+    }
+    assert("generate reported removals: " + changes.removedPaths.join(", ")) {
+      changes.removedPaths.length == 0
+    }
 
     null
   }
@@ -308,8 +318,8 @@ type E2e {
     let mod = dangSdk.mod(ws, path: skipModulePath)
     let changes = mod.generate(ws)
 
-    assert(mod.skipGenerate(ws), "skip marker was not detected")
-    assert(changes.isEmpty, "generate returned changes for a skipped module")
+    assert("skip marker was not detected") { mod.skipGenerate(ws) }
+    assert("generate returned changes for a skipped module") { changes.isEmpty }
 
     # The marker is found relative to the module, not to the caller. Anchored
     # at a cwd that the marker's directory does not contain, a cwd-relative
@@ -321,10 +331,9 @@ type E2e {
       fixtureRoot + "/**/" + dangSdk.skipGenerateFilename,
     ])
     let fromFixtures = snapshot.asWorkspace(cwd: fixtureRoot)
-    assert(
-      dangSdk.mod(fromFixtures, path: "skip/app").skipGenerate(fromFixtures),
-      "skip marker was missed when the cwd sits above it",
-    )
+    assert("skip marker was missed when the cwd sits above it") {
+      dangSdk.mod(fromFixtures, path: "skip/app").skipGenerate(fromFixtures)
+    }
 
     null
   }
@@ -338,7 +347,9 @@ type E2e {
     let latest = engine.requireLatest
     let latestConfig = latest.layer.file(lookupModulePath + "/dagger.json").contents
 
-    assert(engine.required == "0.20.8", "engine.required should trim a leading v")
+    assert("engine.required should trim a leading v") {
+      engine.required == "0.20.8"
+    }
     assertOnlyConfigChanged(fixed, lookupModulePath + "/dagger.json")
     assertContains(
       fixed.layer.file(lookupModulePath + "/dagger.json").contents,
@@ -373,9 +384,15 @@ type E2e {
   dependencyListCheck(ws: Workspace!): Void @check {
     let deps = dangSdk.mod(ws, path: depsModulePath).deps.list
 
-    assert(contains(deps, "../dep-string"), "string dependency source was not listed")
-    assert(contains(deps, "dep-named"), "named dependency was not listed")
-    assert(contains(deps, "../dep-source-only"), "source-only dependency was not listed by source")
+    assert("string dependency source was not listed") {
+      contains(deps, "../dep-string")
+    }
+    assert("named dependency was not listed") {
+      contains(deps, "dep-named")
+    }
+    assert("source-only dependency was not listed by source") {
+      contains(deps, "../dep-source-only")
+    }
 
     null
   }
@@ -415,7 +432,9 @@ type E2e {
     assertContains(sourceRemovedConfig, "\"name\": \"dep-named\"", "removing by source removed a different dependency")
 
     let updated = deps.update
-    assert(updated.isEmpty, "updating only local dependencies should not edit dagger.json")
+    assert("updating only local dependencies should not edit dagger.json") {
+      updated.isEmpty
+    }
 
     # An explicit target that cannot be updated must say so; silently returning
     # an empty changeset would look like a successful no-op.
