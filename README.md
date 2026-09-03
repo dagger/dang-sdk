@@ -2,9 +2,8 @@
 
 A Dagger module for managing Dagger modules that use the built-in Dang SDK.
 
-It powers `dagger module init dang` and exposes the remaining
-module-management operations (generate, dependencies, engine version) through
-`dagger call`.
+It implements the SDK provider interface used by `dagger module init`,
+`dagger module client`, and `dagger generate`.
 
 It uses the engine's native `Workspace` and `ModuleSource` APIs directly.
 
@@ -13,52 +12,66 @@ It uses the engine's native `Workspace` and `ModuleSource` APIs directly.
 From your workspace root:
 
 ```sh
-dagger install github.com/dagger/dang-sdk
+dagger module install github.com/dagger/dang-sdk
 ```
 
-After install, the module is available in `dagger call` as `dang-sdk`.
-
-Calls that return a `Changeset` will print the diff and prompt you to confirm
-before writing anything to your workspace.
+The install registers the module as the `dang` SDK.
 
 ## Create A New Module
 
-Install this module as the `dang` SDK, then create a module with the CLI:
+Create a module with the CLI:
 
 ```sh
-dagger sdk install dang
-dagger module init dang my-module
+dagger module init dang --name my-module
 ```
 
 By default the module is created under `.dagger/modules/<name>/`. Pick a
 different location with `--path`:
 
 ```sh
-dagger module init dang my-module --path some/dir/my-module
+dagger module init dang --name my-module --path some/dir/my-module
 ```
 
-`module init` seeds template files. Run `mod ... generate` to refresh generated
-SDK files when generation produces any.
+`module init` writes `dagger-module.toml` and the minimal `main.dang` template.
+The engine records the scope in `dagger.toml`.
 
-## Generate SDK Files
-
-For a single module:
+The template is an SDK scope setting. The only current value is `minimal`:
 
 ```sh
-dagger call dang-sdk mod --path my-module generate
+dagger module init dang --name my-module --template minimal
 ```
 
-For every Dang SDK module visible from your current directory — the module
-you're in and the projects beneath it — skipping any with a
-`.dagger-dang-sdk-skip-generate` marker at or above the module root:
+## Generate Scope Files
+
+The engine calls `generateScope` for each recorded Dang scope:
 
 ```sh
-dagger call dang-sdk generate
+dagger generate
 ```
 
-## Manage Dependencies
+The SDK creates files only when a module has no `dagger-module.toml`. It keeps
+existing module source during later generation.
 
-List:
+## Manage Module Clients
+
+The built-in Dang runtime has no generated client files. This SDK stores the
+complete client set as module dependencies in `dagger-module.toml`.
+
+Add, list, update, or remove a module client with the standard commands:
+
+```sh
+dagger module client add <module>
+dagger module client list
+dagger module client update
+dagger module client rm <module>
+```
+
+## Direct Module Helpers
+
+The module keeps direct helpers for legacy `dagger.json` modules. Calls that
+return a `Changeset` show the diff and ask for confirmation.
+
+List dependencies:
 
 ```sh
 dagger call dang-sdk mod --path my-module deps list
@@ -107,24 +120,12 @@ dagger call dang-sdk mod --path my-module engine require-current
 dagger call dang-sdk mod --path my-module engine require-latest
 ```
 
-## Discover Modules In A Workspace
-
-Listing covers the Dang modules your workspace registers under this SDK in
-`dagger.toml`, scoped to your current directory rather than the workspace root:
-every registered module at or below you, plus the nearest enclosing one. Paths
-print relative to where you invoked the command.
-
-```sh
-dagger call dang-sdk modules path
-```
-
 See [`dang-sdk.dang`](./dang-sdk.dang) for the full type surface.
 
 ## Skipping Generation
 
-To exclude a directory tree from `generate-all`, drop an empty
-`.dagger-dang-sdk-skip-generate` file at or above the module root. Useful for
-fixtures, vendored modules, or anything you do not want regenerated in bulk.
+The direct `mod generate` helper skips a module when it finds a
+`.dagger-dang-sdk-skip-generate` file at or above the module root.
 
 ```sh
 touch some/fixture/.dagger-dang-sdk-skip-generate
@@ -132,13 +133,7 @@ touch some/fixture/.dagger-dang-sdk-skip-generate
 
 ## Test
 
-Run shared SDK helper contract checks from this repository with:
-
-```sh
-dagger -m github.com/dagger/sdk-sdk check
-```
-
-Run this repo's e2e module with:
+Run the e2e module with:
 
 ```sh
 dagger -m .dagger/modules/e2e check

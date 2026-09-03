@@ -3,21 +3,102 @@ Manage Dagger modules that use the built-in Dang SDK.
 """
 type DangSdk {
   """
+  Template used when a new Dang module is initialized.
+  """
+  template: String! = "minimal"
+
+  """
   Marker filename that skips generate when found at or above a Dang SDK module root.
   """
   skipGenerateFilename: String! = ".dagger-dang-sdk-skip-generate"
 
   """
-  Return every managed Dang SDK module in the client's cwd scope: every module
-  at or below the cwd, plus the nearest enclosing module when the cwd itself is
-  not managed. The engine selects this directly from the workspace's registered
-  SDK modules; no filesystem discovery is required.
+  Detect the nearest Dang module that contains Workspace.cwd.
   """
-  modules(ws: Workspace!): [Mod!]! {
-    currentModule
-      .asSDK(workspace: ws)
-      .modules.{{path}}
-      .map { module => Mod(rootPath: module.path, ws: ws, skipGenerateFilename: skipGenerateFilename) }
+  detectScope(ws: Workspace!): String! {
+    let found = ws.findUp("dagger-module.toml")
+    if (found == null) {
+      ""
+    } else {
+      let base = configDir(found, "dagger-module.toml")
+      let runtime = ws.moduleSource("/" + base).sdk.source rescue { err: Error => "" }
+      if (runtime == "dang") { base } else { "" }
+    }
+  }
+
+  """
+  Generate one Dang SDK scope.
+
+  A new module gets a manifest and starter source. Existing module source is
+  preserved. Module clients are stored as dependencies because the built-in
+  Dang runtime does not generate client files.
+  """
+  generateScope(
+    ws: Workspace!,
+    isModule: Boolean!,
+    name: String!,
+    clients: [ModuleSource!]!,
+  ): Workspace! {
+    let initialized = if (exists(ws, "dagger-module.toml")) {
+      ws
+    } else if (!isModule) {
+      ws
+    } else if (!currentModule.source.exists("templates/" + template)) {
+      raise "unknown init template: " + template
+    } else {
+      ws
+        .withFile(
+          "dagger-module.toml",
+          moduleManifest.v1(name: name).withRuntime(source: "dang").asFile,
+        )
+        .withDirectory(".", renderedTemplate(name, template))
+    }
+
+    if (!exists(initialized, "dagger-module.toml")) {
+      if (clients.length > 0) {
+        raise "Dang clients require a Dang module in the scope"
+      } else {
+        initialized
+      }
+    } else {
+      withClients(initialized, clients)
+    }
+  }
+
+  """
+  Return true when a path exists in Workspace.cwd.
+  """
+  let exists(ws: Workspace!, path: String!): Boolean! {
+    ws.directory(".", include: [path]).exists(path)
+  }
+
+  """
+  Replace the module dependency set with the complete client set.
+  """
+  let withClients(ws: Workspace!, clients: [ModuleSource!]!): Workspace! {
+    let src = ws.moduleSource(".")
+    let runtime = src.sdk.source rescue { err: Error => "" }
+
+    if (runtime != "dang") {
+      raise "Dagger module does not use the Dang runtime: " + ws.cwd
+    } else {
+      let dependencies = src.dependencies.{{moduleName}}.map { dep => dep.moduleName }
+      let clientNames = clients.{{moduleName}}.map { client => client.moduleName }
+      let obsolete = dependencies.filter { dependency => !clientNames.contains(dependency) }
+      let unchanged = dependencies.length == clientNames.length and obsolete.length == 0
+
+      if (unchanged) {
+        ws
+      } else {
+        let configured = src
+          .withoutDependencies(dependencies: obsolete)
+          .withDependencies(dependencies: clients)
+
+        # updatedConfigDirectory is rooted at the Workspace root. Extract this
+        # scope before it is merged at Workspace.cwd.
+        ws.withDirectory(".", configured.updatedConfigDirectory.directory(ws.cwd))
+      }
+    }
   }
 
   """
@@ -131,44 +212,6 @@ type DangSdk {
   }
 
   """
-  Engine runtime recorded for modules created with this SDK.
-
-  The Dang runtime lives in the engine, so modules initialized through
-  `dagger module init dang` run on the built-in "dang" runtime rather than on
-  this management module.
-  """
-  targetRuntime: String! {
-    "dang"
-  }
-
-  """
-  Scaffold a new Dang module for `dagger module init dang <name>`.
-
-  The engine owns and writes the config files (dagger.toml, dagger-module.toml),
-  so this returns only the starter source under `path`. `template` selects a
-  templates/<template> directory; the empty default uses the minimal template.
-  """
-  initModule(
-    ws: Workspace!,
-    name: String!,
-    path: String!,
-    template: String! = "",
-  ): Changeset! {
-    let modPath = if (path == "" or path == ".") { "." } else {
-      path.trimSuffix("/")
-    }
-    let selectedTemplate = if (template == "") { "minimal" } else { template }
-
-    if (currentModule.source.exists("templates/" + selectedTemplate) == false) {
-      raise "unknown init template: " + template
-    } else {
-      # Merge, never replace: initializing inside an existing project must not
-      # delete the project.
-      ws.withDirectory("/" + modPath, renderedTemplate(name, selectedTemplate)).changes(ws)
-    }
-  }
-
-  """
   Render a Dang template with the requested module name.
   """
   let renderedTemplate(name: String!, templateName: String!): Directory! {
@@ -185,17 +228,4 @@ type DangSdk {
       .directory("/rendered")
   }
 
-  """
-  Generate every Dang SDK module visible from the client's current location:
-  running from a subdirectory generates only the project you're in and the
-  projects beneath it.
-
-  Modules with the generate skip marker are skipped.
-
-  Two modules generating the same path is a conflict and fails, rather than
-  silently keeping whichever module happened to be generated last.
-  """
-  generate(ws: Workspace!): Changeset! @generate {
-    changeset.withChangesets(modules(ws).map { mod => mod.generate(ws) })
-  }
 }
