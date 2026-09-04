@@ -76,7 +76,7 @@ type DangSdk {
   let generateScopeClients(ws: Workspace!, name: String!, clients: [ModuleSource!]!): Workspace! {
     let configured = clients.{{moduleName, kind, sourceRootSubpath, asString, pin}}
       .reduce(moduleManifest.withName(name).withLegacyDangRuntime) { manifest, client =>
-        manifest.withDependency(
+        manifest.withLegacyRuntimeDependency(
           source: dependencySource(
             ws.cwd,
             client.kind,
