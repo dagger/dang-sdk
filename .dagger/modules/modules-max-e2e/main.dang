@@ -35,19 +35,21 @@ type ModulesMaxE2e {
       )
       .withNewFile(
         "manifest-test/main.dang",
-        "type ManifestTest {\n" +
-        "  clientManifestCheck(ws: Workspace!): Void @check {\n" +
-        "    let scoped = ws.withDirectory(\"/scope\", directory).withWorkdir(\"scope\")\n" +
-        "    let target = ws.moduleSource(\"/target\")\n" +
-        "    let generated = dangSdk.generateScope(scoped, isModule: true, name: \"scope\", clients: [target])\n" +
-        "    let current = generated.file(\"dagger-module.toml\").contents\n" +
-        "    assert(\"client missing from dagger-module.toml: \\n\" + current) { current.contains(\"target\") }\n" +
-        "    assert(\"thin module contains dagger.json\") { !generated.directory(\".\", include: [\"dagger.json\"]).exists(\"dagger.json\") }\n" +
-        "    let removed = dangSdk.generateScope(generated, isModule: true, name: \"scope\", clients: [])\n" +
-        "    assert(\"client remained in dagger-module.toml\") { !removed.file(\"dagger-module.toml\").contents.contains(\"target\") }\n" +
-        "    null\n" +
-        "  }\n" +
-        "}\n",
+        ```dang
+        type ManifestTest {
+          clientManifestCheck(ws: Workspace!): Void @check {
+            let scoped = ws.withDirectory("/scope", directory).withWorkdir("scope")
+            let target = ws.moduleSource("/target")
+            let generated = dangSdk.generateScope(scoped, isModule: true, name: "scope", clients: [target])
+            let current = generated.file("dagger-module.toml").contents
+            assert("client missing from dagger-module.toml: \n" + current) { current.contains("target") }
+            assert("thin module contains dagger.json") { !generated.directory(".", include: ["dagger.json"]).exists("dagger.json") }
+            let removed = dangSdk.generateScope(generated, isModule: true, name: "scope", clients: [])
+            assert("client remained in dagger-module.toml") { !removed.file("dagger-module.toml").contents.contains("target") }
+            null
+          }
+        }
+        ```,
       )
     let initialized = engineDev(ws: engineWs)
       .playground
