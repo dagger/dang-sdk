@@ -49,7 +49,8 @@ type DangSdk {
       ws
         .withDirectory(
           ".",
-          moduleManifest(name: name)
+          moduleManifest
+            .withName(name)
             .withLegacyDangRuntime
             .directory,
         )
@@ -78,28 +79,65 @@ type DangSdk {
   Replace the module dependency set with the complete client set.
   """
   let withClients(ws: Workspace!, clients: [ModuleSource!]!): Workspace! {
-    let src = ws.moduleSource(".")
-    let runtime = src.sdk.source rescue { err: Error => "" }
-
-    if (runtime != "dang") {
-      raise "Dagger module does not use the Dang runtime: " + ws.cwd
+    let loaded = if (exists(ws, "dagger.json")) {
+      moduleManifest(
+        loadTOML: ws.file("dagger-module.toml"),
+        loadJSON: ws.file("dagger.json"),
+      )
     } else {
-      let dependencies = src.dependencies.{{moduleName}}.map { dep => dep.moduleName }
-      let clientNames = clients.{{moduleName}}.map { client => client.moduleName }
-      let obsolete = dependencies.filter { dependency => !clientNames.contains(dependency) }
-      let unchanged = dependencies.length == clientNames.length and obsolete.length == 0
-
-      if (unchanged) {
-        ws
-      } else {
-        let configured = src
-          .withoutDependencies(dependencies: obsolete)
-          .withDependencies(dependencies: clients)
-
-        # updatedConfigDirectory is rooted at the Workspace root. Extract this
-        # scope before it is merged at Workspace.cwd.
-        ws.withDirectory(".", configured.updatedConfigDirectory.directory(ws.cwd))
+      moduleManifest(loadTOML: ws.file("dagger-module.toml"))
+    }
+    let configured = clients.{{moduleName, kind, sourceRootSubpath, asString, pin}}
+      .reduce(loaded.withoutDependencies) { manifest, client =>
+        manifest.withDependency(
+          source: dependencySource(
+            ws.cwd,
+            client.kind,
+            client.sourceRootSubpath,
+            client.asString,
+          ),
+          name: client.moduleName,
+          pin: client.pin,
+        )
       }
+
+    ws.withDirectory(".", configured.directory)
+  }
+
+  """
+  Return the dependency source to write for a client.
+  """
+  let dependencySource(
+    scopePath: String!,
+    kind: ModuleSourceKind!,
+    sourceRootSubpath: String!,
+    ref: String!,
+  ): String! {
+    if (kind == ModuleSourceKind.GIT_SOURCE) {
+      ref
+    } else {
+      relativePath(scopePath, sourceRootSubpath)
+    }
+  }
+
+  """
+  Return a path from one workspace directory to another.
+  """
+  let relativePath(from: String!, to: String!): String! {
+    relativePathParts(pathParts(from), pathParts(to))
+  }
+
+  let pathParts(path: String!): [String!]! {
+    let normalized = normalizePath(path)
+    if (normalized == ".") { [] } else { normalized.split("/") }
+  }
+
+  let relativePathParts(from: [String!]!, to: [String!]!): String! {
+    if (!from.isEmpty and !to.isEmpty and from.takeFirst.join("") == to.takeFirst.join("")) {
+      relativePathParts(from.dropFirst, to.dropFirst)
+    } else {
+      let relative = (from.map { segment => ".." } + to).join("/")
+      if (relative == "") { "." } else { relative }
     }
   }
 

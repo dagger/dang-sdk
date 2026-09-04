@@ -252,8 +252,10 @@ type E2e {
       clients: [target],
     )
     let withClient = generated.file("dagger-module.toml").contents
+    let legacyWithClient = generated.file("dagger.json").contents
 
     assertContains(withClient, "lookup-toml-app", "generateScope did not add the requested client")
+    assertContains(legacyWithClient, "lookup-toml-app", "generateScope did not add the requested client to dagger.json")
 
     let removed = dangSdk.generateScope(
       generated,
@@ -265,6 +267,11 @@ type E2e {
       removed.file("dagger-module.toml").contents,
       "lookup-toml-app",
       "generateScope did not remove an obsolete client",
+    )
+    assertNotContains(
+      removed.file("dagger.json").contents,
+      "lookup-toml-app",
+      "generateScope did not remove an obsolete client from dagger.json",
     )
 
     null
