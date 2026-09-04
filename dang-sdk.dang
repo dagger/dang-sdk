@@ -4,6 +4,7 @@ Manage Dagger modules that use the built-in Dang SDK.
 type DangSdk {
   """
   Template used when a new Dang module is initialized.
+  Available templates: minimal.
   """
   template: String! = "minimal"
 
