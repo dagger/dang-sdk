@@ -1,0 +1,51 @@
+"""
+Validate the development Dang SDK with the modules-max engine.
+"""
+type ModulesMaxE2e {
+  let engineRepository: String! = "https://github.com/dagger/dagger"
+  let engineRef: String! = "sdk-ux-module-max"
+  let modulePath: String! = ".tmp/modules-max-smoke"
+
+  """
+  The modules-max engine should recognize this SDK, initialize a module, and
+  load and call the generated module.
+  """
+  devSdkCheck(ws: Workspace!): Void @check {
+    let engineWs = git(engineRepository)
+      .branch(engineRef)
+      .asWorkspace
+    let source = ws.directory("/", exclude: [".git/**", ".tmp/**"])
+    let initialized = engineDev(ws: engineWs)
+      .playground
+      .withDirectory("/work", source)
+      .withWorkdir("/work")
+      .withExec([
+        "dagger",
+        "-y",
+        "module",
+        "init",
+        "dang",
+        "--name",
+        "modules-max-smoke",
+        "--path",
+        modulePath,
+      ])
+
+    assert("module init did not write dagger-module.toml") {
+      initialized.exists("/work/" + modulePath + "/dagger-module.toml")
+    }
+    assert("module init did not write dagger.json") {
+      initialized.exists("/work/" + modulePath + "/dagger.json")
+    }
+
+    let output = initialized
+      .withExec(["dagger", "-m", modulePath, "call", "hello"])
+      .stdout
+      .trimSuffix("\n")
+    assert("generated module returned an unexpected result: " + output) {
+      output == "hello from Dang"
+    }
+
+    null
+  }
+}
