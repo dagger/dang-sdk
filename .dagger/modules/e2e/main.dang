@@ -1,449 +1,118 @@
 """
-End-to-end checks for the Dang SDK helper module.
+Run the Dang SDK end-to-end suite on a development engine.
 """
 type E2e {
-  let fixtureRoot: String! = ".dagger/modules/e2e/fixtures"
-  let outputRoot: String! = ".dagger/modules/e2e/out"
+  """
+  Git ref used to build the target engine.
+  """
+  targetEngineRef: String! = "sdk-ux-module-max"
 
-  let lookupModulePath: String! = fixtureRoot + "/lookup/app"
-  let lookupNestedPath: String! = lookupModulePath + "/nested"
-  let nonDangModulePath: String! = fixtureRoot + "/lookup/not-dang"
-  # A module config that declares no runtime at all, not merely a different one.
-  let noRuntimeModulePath: String! = fixtureRoot + "/lookup/no-runtime"
-  let generateModulePath: String! = fixtureRoot + "/generate/app"
-  let depsModulePath: String! = fixtureRoot + "/deps/app"
-  # CLI 1.0 modules: configured by dagger-module.toml instead of dagger.json.
-  let tomlModulePath: String! = fixtureRoot + "/lookup-toml/app"
-  let tomlNestedPath: String! = tomlModulePath + "/nested"
-  let nonDangTomlModulePath: String! = fixtureRoot + "/lookup-toml/not-dang"
-  # A partially migrated tree: an ancestor dagger.json, a nearer dagger-module.toml.
-  let mixedOuterPath: String! = fixtureRoot + "/mixed-config/outer"
-  let mixedInnerPath: String! = mixedOuterPath + "/inner"
-  let mixedNestedPath: String! = mixedInnerPath + "/nested"
+  let engineRepository: String! = "https://github.com/dagger/dagger"
+  let modulePath: String! = ".tmp/e2e-module"
 
   """
-  Return true when a list contains the exact string.
+  The target engine should initialize, load, and test the development Dang SDK.
   """
-  let contains(values: [String!]!, want: String!): Boolean! {
-    values
-      .filter { value => value == want }
-      .length > 0
-  }
+  devSdkCheck(ws: Workspace!): Void @check {
+    let engineWs = git(engineRepository)
+      .branch(targetEngineRef)
+      .asWorkspace
+    let sdkSource = ws.directory("/", exclude: [".git/**", ".tmp/**"])
+    let testWorkspace = sdkSource.withNewFile(
+      "dagger.toml",
+      ```toml
+      [modules.dang-sdk]
+      source = "."
 
-  """
-  Return true when a path exists in Workspace.cwd.
-  """
-  let exists(ws: Workspace!, path: String!): Boolean! {
-    ws.directory(".", include: [path]).exists(path)
-  }
+      [modules.e2e-suite]
+      source = ".dagger/modules/e2e/suite"
 
-  """
-  Assert that a string contains a substring.
-  """
-  let assertContains(value: String!, want: String!, message: String!): Void {
-    assert(message) { value.contains(want) }
-  }
+      [sdks.dang]
+      module = "dang-sdk"
 
-  """
-  Assert that a string does not contain a substring.
-  """
-  let assertNotContains(value: String!, want: String!, message: String!): Void {
-    assert(message) { value.contains(want) == false }
-  }
+      [sdks.dang.scopes.".dagger/modules/e2e/fixtures/lookup-toml/app"]
+      is-module = true
+      name = "lookup-toml-app"
+      ```,
+    )
+    let initialized = engineDev(ws: engineWs)
+      .playground
+      .withDirectory("/work", testWorkspace)
+      .withWorkdir("/work")
+      .withExec(["git", "init", "--quiet"])
+      .withExec([
+        "dagger",
+        "-W",
+        ".",
+        "-y",
+        "module",
+        "init",
+        "dang",
+        "--name",
+        "e2e-module",
+        "--path",
+        modulePath,
+      ])
 
-  """
-  Assert that a config edit touched the module config and nothing else.
-  """
-  let assertOnlyConfigChanged(changes: Changeset!, path: String!): Void {
-    assert("config edit did not modify " + path) {
-      contains(changes.modifiedPaths, path)
+    assert("module init did not write dagger-module.toml") {
+      initialized.exists("/work/" + modulePath + "/dagger-module.toml")
     }
-    assert("config edit modified more than " + path) {
-      changes.modifiedPaths.length == 1
+    assert("module init wrote dagger.json by default") {
+      !initialized.exists("/work/" + modulePath + "/dagger.json")
     }
-    assert("config edit should not add files") {
-      changes.addedPaths.length == 0
-    }
-    assert("config edit removed files: " + changes.removedPaths.join(", ")) {
-      changes.removedPaths.length == 0
-    }
-  }
 
-  """
-  Mod lookup should find the owning Dang SDK module when called from a nested path.
-  """
-  moduleLookupCheck(ws: Workspace!): Void @check {
-    let nested = dangSdk.mod(ws, path: lookupNestedPath)
-    let exact = dangSdk.mod(ws, path: lookupModulePath, findUp: false)
-
-    assert("find-up lookup returned the wrong module path") {
-      nested.rootPath == lookupModulePath
+    let fat = initialized.withExec([
+      "dagger",
+      "-W",
+      ".",
+      "-y",
+      "module",
+      "init",
+      "dang",
+      "--name",
+      "e2e-module",
+      "--path",
+      modulePath,
+      "--fat",
+    ])
+    assert("fat generation did not create dagger.json") {
+      fat.exists("/work/" + modulePath + "/dagger.json")
     }
-    assert("exact lookup returned the wrong module path") {
-      exact.rootPath == lookupModulePath
+
+    let thin = fat.withExec([
+      "dagger",
+      "-W",
+      ".",
+      "-y",
+      "module",
+      "init",
+      "dang",
+      "--name",
+      "e2e-module",
+      "--path",
+      modulePath,
+      "--fat=false",
+    ])
+    assert("thin generation did not remove dagger.json") {
+      !thin.exists("/work/" + modulePath + "/dagger.json")
+    }
+
+    let verified = thin.withExec([
+      "dagger",
+      "-W",
+      ".",
+      "-m",
+      "e2e-suite",
+      "check",
+    ])
+    let output = verified
+      .withExec(["dagger", "-W", ".", "-m", modulePath, "call", "hello"])
+      .stdout
+      .trimSuffix("\n")
+    assert("generated module returned an unexpected result: " + output) {
+      output == "hello from Dang"
     }
 
     null
-  }
-
-  """
-  Return the error message raised while resolving a module, or its resolved
-  path when the lookup unexpectedly succeeds.
-  """
-  let lookupFailure(ws: Workspace!, path: String!): String! {
-    dangSdk.mod(ws, path: path).rootPath rescue {
-      err: Error => err.message
-    }
-  }
-
-  """
-  Mod lookup should find the owning module through a dagger-module.toml.
-  """
-  moduleLookupTomlCheck(ws: Workspace!): Void @check {
-    let nested = dangSdk.mod(ws, path: tomlNestedPath)
-    let exact = dangSdk.mod(ws, path: tomlModulePath, findUp: false)
-
-    assert("find-up lookup returned the wrong dagger-module.toml module path") {
-      nested.rootPath == tomlModulePath
-    }
-    assert("exact lookup returned the wrong dagger-module.toml module path") {
-      exact.rootPath == tomlModulePath
-    }
-
-    null
-  }
-
-  """
-  A dagger-module.toml module owned by another runtime should be rejected.
-  """
-  moduleLookupNonDangTomlCheck(ws: Workspace!): Void @check {
-    let message = lookupFailure(ws, nonDangTomlModulePath)
-
-    assertContains(message, "does not use the Dang SDK", "non-Dang runtime was not rejected: " + message)
-
-    null
-  }
-
-  """
-  A dagger.json module owned by another runtime should be rejected.
-  """
-  moduleLookupNonDangJsonCheck(ws: Workspace!): Void @check {
-    let message = lookupFailure(ws, nonDangModulePath)
-    let noRuntime = lookupFailure(ws, noRuntimeModulePath)
-
-    assertContains(message, "does not use the Dang SDK", "non-Dang runtime was not rejected: " + message)
-    assertContains(noRuntime, "does not use the Dang SDK", "config without a runtime was not rejected: " + noRuntime)
-
-    null
-  }
-
-  """
-  In a partially migrated tree the closest config wins: a nearer
-  dagger-module.toml must beat an ancestor's legacy dagger.json.
-  """
-  mixedConfigLookupCheck(ws: Workspace!): Void @check {
-    let nested = dangSdk.mod(ws, path: mixedNestedPath)
-
-    assert("closest config did not win; resolved to " + nested.rootPath) {
-      nested.rootPath == mixedInnerPath
-    }
-
-    null
-  }
-
-  """
-  findClientRoot should return the nearest Dang module root and ignore a module
-  that uses a different runtime.
-  """
-  findClientRootCheck(ws: Workspace!): Void @check {
-    let nested = ws.withWorkdir(tomlNestedPath)
-    let otherRuntime = ws.withWorkdir(nonDangTomlModulePath)
-
-    assert("findClientRoot returned the wrong Dang root") {
-      dangSdk.findClientRoot(nested) == tomlModulePath
-    }
-    assert("findClientRoot returned a root for another runtime") {
-      dangSdk.findClientRoot(otherRuntime) == ""
-    }
-
-    null
-  }
-
-  """
-  generateScope should create a valid current module manifest plus starter
-  source. It must remove a stale legacy manifest and keep other existing files.
-  """
-  generateScopeInitCheck(ws: Workspace!): Void @check {
-    let scoped = ws
-      .withDirectory("/" + outputRoot + "/init-module", directory)
-      .withWorkdir(outputRoot + "/init-module")
-      .withNewFile("dagger.json", "{\"name\":\"stale\"}\n")
-      .withNewFile("keep.txt", "keep\n")
-    let generated = dangSdk.generateScope(
-      scoped,
-      isModule: true,
-      name: "init-module",
-      clients: [],
-    )
-    let manifest = generated.file("dagger-module.toml").contents
-
-    assertContains(manifest, "name = \"init-module\"", "generateScope wrote the wrong module name")
-    assertContains(manifest, "source = \"dang\"", "generateScope wrote the wrong runtime")
-    assert("generateScope did not remove dagger.json for a thin module") {
-      !exists(generated, "dagger.json")
-    }
-    assertContains(generated.file("main.dang").contents, "type InitModule {", "minimal template did not render the module type")
-    assert("generateScope removed an existing file") {
-      generated.file("keep.txt").contents == "keep\n"
-    }
-
-    null
-  }
-
-  """
-  An existing manifest is the lifecycle marker. Regeneration must not apply the
-  init template again or replace existing source.
-  """
-  generateScopeExistingCheck(ws: Workspace!): Void @check {
-    let scoped = ws
-      .withDirectory("/" + outputRoot + "/existing-module", directory)
-      .withWorkdir(outputRoot + "/existing-module")
-    let initialized = dangSdk.generateScope(
-      scoped,
-      isModule: true,
-      name: "existing-module",
-      clients: [],
-    )
-    let edited = initialized.withNewFile("main.dang", "type Preserved {}\n")
-    let regenerated = dangSdk.generateScope(
-      edited,
-      isModule: true,
-      name: "existing-module",
-      clients: [],
-    )
-
-    assert("regeneration replaced existing source") {
-      regenerated.file("main.dang").contents == "type Preserved {}\n"
-    }
-    assert("regeneration replaced the existing manifest") {
-      regenerated.file("dagger-module.toml").contents == initialized.file("dagger-module.toml").contents
-    }
-
-    null
-  }
-
-  """
-  clients is the complete desired client set. Dang stores these clients as
-  module dependencies and removes dependencies that are no longer requested.
-  """
-  generateScopeClientsCheck(ws: Workspace!): Void @check {
-    let scoped = ws
-      .withDirectory("/" + outputRoot + "/clients", directory)
-      .withWorkdir(outputRoot + "/clients")
-    let target = ws.moduleSource("/" + tomlModulePath)
-    let generated = dangSdk.generateScope(
-      scoped,
-      isModule: true,
-      name: "clients",
-      clients: [target],
-    )
-    let withClient = generated.file("dagger-module.toml").contents
-
-    assertContains(withClient, "lookup-toml-app", "generateScope did not add the requested client")
-    assert("generateScope wrote dagger.json for a thin module") {
-      !exists(generated, "dagger.json")
-    }
-
-    let removed = dangSdk.generateScope(
-      generated,
-      isModule: true,
-      name: "clients",
-      clients: [],
-    )
-    assertNotContains(
-      removed.file("dagger-module.toml").contents,
-      "lookup-toml-app",
-      "generateScope did not remove an obsolete client",
-    )
-
-    null
-  }
-
-  """
-  Generating an existing generated-clean Dang module should not produce
-  language-side files today.
-  """
-  generateCheck(ws: Workspace!): Void @check {
-    let changes = dangSdk.mod(ws, path: generateModulePath).generate(ws)
-
-    assert("Dang generation should be empty") { changes.isEmpty }
-
-    null
-  }
-
-  """
-  Generation should report only what it actually changed.
-
-  `ModuleSource.generate` folds onto the workspace it is handed and the
-  changeset is taken against that same workspace, so a module needing one edit
-  comes back as one path — never as the whole generated context re-reported
-  against an empty baseline.
-  """
-  generateBaselineCheck(ws: Workspace!): Void @check {
-    # Denormalize the config so generation has exactly one thing to fix.
-    let perturbed = ws.withNewFile(
-      "/" + generateModulePath + "/dagger.json",
-      "{\n  \"name\": \"generate-app\",\n  \"engineVersion\": \"latest\",\n  \"sdk\": {\n    \"source\": \"dang\"\n  }\n}\n",
-    )
-    let changes = dangSdk.mod(perturbed, path: generateModulePath).generate(perturbed)
-
-    assert("generate should report the config it normalized") {
-      contains(changes.modifiedPaths, generateModulePath + "/dagger.json")
-    }
-    assert("generate reported more than it changed: " + changes.modifiedPaths.join(", ")) {
-      changes.modifiedPaths.length == 1
-    }
-    assert("generate re-reported existing files as added: " + changes.addedPaths.join(", ")) {
-      changes.addedPaths.length == 0
-    }
-    assert("generate reported removals: " + changes.removedPaths.join(", ")) {
-      changes.removedPaths.length == 0
-    }
-
-    null
-  }
-
-  """
-  Engine version helpers should read dagger.json and write normalized versions.
-  """
-  engineVersionCheck(ws: Workspace!): Void @check {
-    let engine = dangSdk.mod(ws, path: lookupModulePath).engine
-    let fixed = engine.require(version: "0.21.0")
-    let latest = engine.requireLatest
-    let latestConfig = latest.layer.file(lookupModulePath + "/dagger.json").contents
-
-    assert("engine.required should trim a leading v") {
-      engine.required == "0.20.8"
-    }
-    assertOnlyConfigChanged(fixed, lookupModulePath + "/dagger.json")
-    assertContains(
-      fixed.layer.file(lookupModulePath + "/dagger.json").contents,
-      "\"engineVersion\": \"v0.21.0\"",
-      "engine.require should write a normalized version",
-    )
-    # The engine resolves "latest" as it writes the config, so what lands is a
-    # concrete release, never the alias.
-    assertNotContains(
-      latestConfig,
-      "\"engineVersion\": \"latest\"",
-      "engine.requireLatest should resolve the latest alias",
-    )
-    assertNotContains(
-      latestConfig,
-      "\"engineVersion\": \"v0.20.8\"",
-      "engine.requireLatest should move the pin off the fixture version",
-    )
-    assertContains(
-      latestConfig,
-      "\"engineVersion\": \"v",
-      "engine.requireLatest should write a concrete version",
-    )
-
-    null
-  }
-
-  """
-  Dependency listing should preserve how users identify dependencies: string
-  entries return their source, named object entries return their name.
-  """
-  dependencyListCheck(ws: Workspace!): Void @check {
-    let deps = dangSdk.mod(ws, path: depsModulePath).deps.list
-
-    assert("string dependency source was not listed") {
-      contains(deps, "../dep-string")
-    }
-    assert("named dependency was not listed") {
-      contains(deps, "dep-named")
-    }
-    assert("source-only dependency was not listed by source") {
-      contains(deps, "../dep-source-only")
-    }
-
-    null
-  }
-
-  """
-  Dependency edits should update only dagger.json. Users run generate
-  separately when they want generated SDK files refreshed.
-  """
-  dependencyEditCheck(ws: Workspace!): Void @check {
-    let deps = dangSdk.mod(ws, path: depsModulePath).deps
-
-    let added = deps.add(source: "../dep-new")
-    assertOnlyConfigChanged(added, depsModulePath + "/dagger.json")
-    let addedConfig = added.after.file(depsModulePath + "/dagger.json").contents
-    assertContains(addedConfig, "\"../dep-new\"", "adding an unnamed dependency did not keep its source")
-    assertNotContains(addedConfig, "\"name\": \"dep-new\"", "adding an unnamed dependency should not load the module to discover its name")
-
-    let named = deps.add(source: "../dep-new", name: "dep-alias")
-    assertOnlyConfigChanged(named, depsModulePath + "/dagger.json")
-    let namedConfig = named.after.file(depsModulePath + "/dagger.json").contents
-    assertContains(namedConfig, "\"name\": \"dep-alias\"", "adding a named dependency did not keep the requested name")
-    assertContains(namedConfig, "\"source\": \"../dep-new\"", "adding a named dependency did not keep its relative source")
-
-    let removed = deps.remove(name: "dep-named")
-    assertOnlyConfigChanged(removed, depsModulePath + "/dagger.json")
-    let removedConfig = removed.after.file(depsModulePath + "/dagger.json").contents
-    assertNotContains(removedConfig, "\"name\": \"dep-named\"", "removing a named dependency left it in dagger.json")
-
-    let sourceRemoved = deps.remove(name: "../dep-source-only")
-    assertOnlyConfigChanged(sourceRemoved, depsModulePath + "/dagger.json")
-    let sourceRemovedConfig = sourceRemoved.after.file(depsModulePath + "/dagger.json").contents
-    assertNotContains(
-      sourceRemovedConfig,
-      "\"source\": \"../dep-source-only\"",
-      "removing by source left the dependency in dagger.json",
-    )
-    assertContains(sourceRemovedConfig, "\"name\": \"dep-named\"", "removing by source removed a different dependency")
-
-    let updated = deps.update
-    assert("updating only local dependencies should not edit dagger.json") {
-      updated.isEmpty
-    }
-
-    # An explicit target that cannot be updated must say so; silently returning
-    # an empty changeset would look like a successful no-op.
-    assertContains(
-      updateFailure(ws, "github.com/dagger/not-a-dependency"),
-      "is not in the dependency list",
-      "updating an unknown dependency should fail",
-    )
-    assertContains(
-      updateFailure(ws, "dep-named"),
-      "updating a local dependency is not supported",
-      "updating a local dependency should fail",
-    )
-    assertContains(
-      updateFailure(ws, "github.com/dagger/not-a-dependency@v1.2.3"),
-      "is not in the dependency list",
-      "a versioned target should be matched on its source, not the whole string",
-    )
-    assertContains(
-      updateFailure(ws, "../dep-string"),
-      "updating a local dependency is not supported",
-      "updating a local dependency by its declared source should fail",
-    )
-
-    null
-  }
-
-  """
-  Return the error message raised while updating a dependency, or the paths it
-  changed when the update unexpectedly succeeds.
-  """
-  let updateFailure(ws: Workspace!, name: String!): String! {
-    dangSdk.mod(ws, path: depsModulePath).deps.update(name: name).modifiedPaths.join(",") rescue {
-      err: Error => err.message
-    }
   }
 }

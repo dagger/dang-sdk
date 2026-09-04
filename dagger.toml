@@ -6,9 +6,6 @@
 [modules.e2e]
 source = ".dagger/modules/e2e"
 
-[modules.modules-max-e2e]
-source = ".dagger/modules/modules-max-e2e"
-
 [modules.dang-sdk]
 source = "."
 

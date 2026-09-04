@@ -1,9 +1,0 @@
-name = "modules-max-e2e"
-engineVersion = "v1.0.0-0"
-
-[runtime]
-  source = "dang"
-
-[[dependencies]]
-  name = "engine-dev"
-  source = "github.com/dagger/dagger/.dagger/modules/engine-dev@sdk-ux-module-max"

@@ -5,5 +5,5 @@ engineVersion = "v1.0.0-0"
   source = "dang"
 
 [[dependencies]]
-  name = "dang-sdk"
-  source = "../../.."
+  name = "engine-dev"
+  source = "github.com/dagger/dagger/.dagger/modules/engine-dev@sdk-ux-module-max"
