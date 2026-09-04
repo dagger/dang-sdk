@@ -10,7 +10,6 @@ type E2e {
   let nonDangModulePath: String! = fixtureRoot + "/lookup/not-dang"
   # A module config that declares no runtime at all, not merely a different one.
   let noRuntimeModulePath: String! = fixtureRoot + "/lookup/no-runtime"
-  let skipModulePath: String! = fixtureRoot + "/skip/app"
   let generateModulePath: String! = fixtureRoot + "/generate/app"
   let depsModulePath: String! = fixtureRoot + "/deps/app"
   # CLI 1.0 modules: configured by dagger-module.toml instead of dagger.json.
@@ -61,17 +60,6 @@ type E2e {
     assert("config edit removed files: " + changes.removedPaths.join(", ")) {
       changes.removedPaths.length == 0
     }
-  }
-
-  """
-  The helper should expose the generate skip marker used by callers.
-  """
-  skipGenerateFilenameCheck: Void @check {
-    assert("skip marker filename changed") {
-      dangSdk.skipGenerateFilename == ".dagger-dang-sdk-skip-generate"
-    }
-
-    null
   }
 
   """
@@ -316,33 +304,6 @@ type E2e {
     }
     assert("generate reported removals: " + changes.removedPaths.join(", ")) {
       changes.removedPaths.length == 0
-    }
-
-    null
-  }
-
-  """
-  A skip marker above a module should make generate return an empty changeset.
-  """
-  skipGenerateCheck(ws: Workspace!): Void @check {
-    let mod = dangSdk.mod(ws, path: skipModulePath)
-    let changes = mod.generate(ws)
-
-    assert("skip marker was not detected") { mod.skipGenerate(ws) }
-    assert("generate returned changes for a skipped module") { changes.isEmpty }
-
-    # The marker is found relative to the module, not to the caller. Anchored
-    # at a cwd that the marker's directory does not contain, a cwd-relative
-    # lookup walks a branch the marker is not on and misses it.
-    let snapshot = ws.directory("/", include: [
-      "dagger.toml",
-      fixtureRoot + "/**/dagger.json",
-      fixtureRoot + "/**/dagger-module.toml",
-      fixtureRoot + "/**/" + dangSdk.skipGenerateFilename,
-    ])
-    let fromFixtures = snapshot.asWorkspace(cwd: fixtureRoot)
-    assert("skip marker was missed when the cwd sits above it") {
-      dangSdk.mod(fromFixtures, path: "skip/app").skipGenerate(fromFixtures)
     }
 
     null

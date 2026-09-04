@@ -123,15 +123,6 @@ dagger call dang-sdk mod --path my-module engine require-latest
 
 See [`dang-sdk.dang`](./dang-sdk.dang) for the full type surface.
 
-## Skipping Generation
-
-The direct `mod generate` helper skips a module when it finds a
-`.dagger-dang-sdk-skip-generate` file at or above the module root.
-
-```sh
-touch some/fixture/.dagger-dang-sdk-skip-generate
-```
-
 ## Test
 
 Run the e2e module with:

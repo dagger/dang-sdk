@@ -14,11 +14,6 @@ type Mod {
   let ws: Workspace!
 
   """
-  Marker filename that skips generate when found at or above this module root.
-  """
-  let skipGenerateFilename: String!
-
-  """
   This module root relative to the client's current location: "." when the cwd
   is the module itself, "sub/mod" for a module beneath it, ".." for an
   enclosing one. A cwd-relative view of rootPath, so listings read the way a
@@ -49,13 +44,6 @@ type Mod {
   }
 
   """
-  Whether this module or an ancestor contains the configured generate skip marker.
-  """
-  skipGenerate(ws: Workspace!): Boolean! {
-    hasMarker(ws, skipGenerateFilename)
-  }
-
-  """
   Manage this module's Dagger dependencies.
   """
   deps: ModDeps! {
@@ -76,24 +64,9 @@ type Mod {
   }
 
   """
-  Whether this module root or an ancestor contains a marker filename.
-  """
-  let hasMarker(ws: Workspace!, filename: String!): Boolean! {
-    # rootPath is workspace-root-relative, so anchor it: findUp resolves a
-    # relative start from the caller's cwd, which would walk the wrong branch.
-    let markerPath = ws.findUp(name: filename, from: "/" + rootPath)
-    markerPath != null
-  }
-
-  """
   Generate this module.
-  If the generate skip marker is present, the changeset is empty.
   """
   generate(ws: Workspace!): Changeset! {
-    if (skipGenerate(ws)) {
-      ws.changes(ws)
-    } else {
-      ws.moduleSource("/" + rootPath).generate(ws).changes(ws)
-    }
+    ws.moduleSource("/" + rootPath).generate(ws).changes(ws)
   }
 }

@@ -8,11 +8,6 @@ type DangSdk {
   template: String! = "minimal"
 
   """
-  Marker filename that skips generate when found at or above a Dang SDK module root.
-  """
-  skipGenerateFilename: String! = ".dagger-dang-sdk-skip-generate"
-
-  """
   Detect the nearest Dang module that contains Workspace.cwd.
   """
   detectScope(ws: Workspace!): String! {
@@ -150,31 +145,6 @@ type DangSdk {
   }
 
   """
-  Return init templates tracked by this module.
-
-  Templates live under templates/<name> and are materialized into the new
-  module. Passing an empty template to init uses the module default.
-  """
-  templates: [Template!]! {
-    if (currentModule.source.exists("templates")) {
-      let root = currentModule.source.directory("templates")
-      root.entries.map { name =>
-        Template(
-          name: name.trimSuffix("/"),
-          source: root.directory(name),
-        )
-      }
-    } else {
-      directory.entries.map { name =>
-        Template(
-          name: name,
-          source: directory,
-        )
-      }
-    }
-  }
-
-  """
   Return the Dang SDK module at or above a workspace path.
 
   When `findUp` is true, `path` may point inside the module. Both the legacy
@@ -214,7 +184,6 @@ type DangSdk {
     Mod(
       rootPath: modPath,
       ws: ws,
-      skipGenerateFilename: skipGenerateFilename,
     )
   }
 
