@@ -175,8 +175,8 @@ type E2e {
   }
 
   """
-  generateScope should create a valid module manifest and starter source. It
-  must keep files that already exist in the new scope.
+  generateScope should create valid current and legacy module manifests plus
+  starter source. It must keep files that already exist in the new scope.
   """
   generateScopeInitCheck(ws: Workspace!): Void @check {
     let scoped = ws
@@ -190,9 +190,12 @@ type E2e {
       clients: [],
     )
     let manifest = generated.file("dagger-module.toml").contents
+    let legacyManifest = generated.file("dagger.json").contents
 
     assertContains(manifest, "name = \"init-module\"", "generateScope wrote the wrong module name")
     assertContains(manifest, "source = \"dang\"", "generateScope wrote the wrong runtime")
+    assertContains(legacyManifest, "\"name\": \"init-module\"", "generateScope wrote the wrong legacy module name")
+    assertContains(legacyManifest, "\"source\": \"dang\"", "generateScope wrote the wrong legacy runtime")
     assertContains(generated.file("main.dang").contents, "type InitModule {", "minimal template did not render the module type")
     assert("generateScope removed an existing file") {
       generated.file("keep.txt").contents == "keep\n"

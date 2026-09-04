@@ -29,9 +29,9 @@ type DangSdk {
   """
   Generate one Dang SDK scope.
 
-  A new module gets a manifest and starter source. Existing module source is
-  preserved. Module clients are stored as dependencies because the built-in
-  Dang runtime does not generate client files.
+  A new module gets current and legacy manifests plus starter source. Existing
+  module source is preserved. Module clients are stored as dependencies because
+  the built-in Dang runtime does not generate client files.
   """
   generateScope(
     ws: Workspace!,
@@ -47,9 +47,11 @@ type DangSdk {
       raise "unknown init template: " + template
     } else {
       ws
-        .withFile(
-          "dagger-module.toml",
-          moduleManifest.v1(name: name).withRuntime(source: "dang").asFile,
+        .withDirectory(
+          ".",
+          moduleManifest(name: name)
+            .withLegacyDangRuntime
+            .directory,
         )
         .withDirectory(".", renderedTemplate(name, template))
     }

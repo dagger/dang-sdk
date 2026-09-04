@@ -32,8 +32,9 @@ different location with `--path`:
 dagger module init dang --name my-module --path some/dir/my-module
 ```
 
-`module init` writes `dagger-module.toml` and the minimal `main.dang` template.
-The engine records the scope in `dagger.toml`.
+`module init` writes `dagger-module.toml`, the legacy `dagger.json` fallback,
+and the minimal `main.dang` template. The engine records the scope in
+`dagger.toml`.
 
 The template is an SDK scope setting. The only current value is `minimal`:
 
