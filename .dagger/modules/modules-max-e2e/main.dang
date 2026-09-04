@@ -41,12 +41,10 @@ type ModulesMaxE2e {
         "    let target = ws.moduleSource(\"/target\")\n" +
         "    let generated = dangSdk.generateScope(scoped, isModule: true, name: \"scope\", clients: [target])\n" +
         "    let current = generated.file(\"dagger-module.toml\").contents\n" +
-        "    let legacy = generated.file(\"dagger.json\").contents\n" +
         "    assert(\"client missing from dagger-module.toml: \\n\" + current) { current.contains(\"target\") }\n" +
-        "    assert(\"client missing from dagger.json: \\n\" + legacy) { legacy.contains(\"target\") }\n" +
+        "    assert(\"thin module contains dagger.json\") { !generated.directory(\".\", include: [\"dagger.json\"]).exists(\"dagger.json\") }\n" +
         "    let removed = dangSdk.generateScope(generated, isModule: true, name: \"scope\", clients: [])\n" +
         "    assert(\"client remained in dagger-module.toml\") { !removed.file(\"dagger-module.toml\").contents.contains(\"target\") }\n" +
-        "    assert(\"client remained in dagger.json\") { !removed.file(\"dagger.json\").contents.contains(\"target\") }\n" +
         "    null\n" +
         "  }\n" +
         "}\n",
@@ -73,11 +71,49 @@ type ModulesMaxE2e {
     assert("module init did not write dagger-module.toml") {
       initialized.exists("/work/" + modulePath + "/dagger-module.toml")
     }
-    assert("module init did not write dagger.json") {
-      initialized.exists("/work/" + modulePath + "/dagger.json")
+    assert("module init wrote dagger.json by default") {
+      !initialized.exists("/work/" + modulePath + "/dagger.json")
     }
 
-    let verified = initialized.withExec([
+    let fat = initialized
+      .withExec([
+        "dagger",
+        "-W",
+        ".",
+        "-y",
+        "module",
+        "init",
+        "dang",
+        "--name",
+        "modules-max-smoke",
+        "--path",
+        modulePath,
+        "--fat",
+      ])
+    assert("fat generation did not create dagger.json") {
+      fat.exists("/work/" + modulePath + "/dagger.json")
+    }
+
+    let thin = fat
+      .withExec([
+        "dagger",
+        "-W",
+        ".",
+        "-y",
+        "module",
+        "init",
+        "dang",
+        "--name",
+        "modules-max-smoke",
+        "--path",
+        modulePath,
+        "--fat=false",
+      ])
+    assert("thin generation did not remove dagger.json") {
+      !thin.exists("/work/" + modulePath + "/dagger.json")
+    }
+
+    let verified = thin.withExec([
       "dagger",
       "-W",
       ".",

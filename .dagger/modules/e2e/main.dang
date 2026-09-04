@@ -31,6 +31,13 @@ type E2e {
   }
 
   """
+  Return true when a path exists in Workspace.cwd.
+  """
+  let exists(ws: Workspace!, path: String!): Boolean! {
+    ws.directory(".", include: [path]).exists(path)
+  }
+
+  """
   Assert that a string contains a substring.
   """
   let assertContains(value: String!, want: String!, message: String!): Void {
@@ -163,13 +170,14 @@ type E2e {
   }
 
   """
-  generateScope should create valid current and legacy module manifests plus
-  starter source. It must keep files that already exist in the new scope.
+  generateScope should create a valid current module manifest plus starter
+  source. It must remove a stale legacy manifest and keep other existing files.
   """
   generateScopeInitCheck(ws: Workspace!): Void @check {
     let scoped = ws
       .withDirectory("/" + outputRoot + "/init-module", directory)
       .withWorkdir(outputRoot + "/init-module")
+      .withNewFile("dagger.json", "{\"name\":\"stale\"}\n")
       .withNewFile("keep.txt", "keep\n")
     let generated = dangSdk.generateScope(
       scoped,
@@ -178,12 +186,12 @@ type E2e {
       clients: [],
     )
     let manifest = generated.file("dagger-module.toml").contents
-    let legacyManifest = generated.file("dagger.json").contents
 
     assertContains(manifest, "name = \"init-module\"", "generateScope wrote the wrong module name")
     assertContains(manifest, "source = \"dang\"", "generateScope wrote the wrong runtime")
-    assertContains(legacyManifest, "\"name\": \"init-module\"", "generateScope wrote the wrong legacy module name")
-    assertContains(legacyManifest, "\"source\": \"dang\"", "generateScope wrote the wrong legacy runtime")
+    assert("generateScope did not remove dagger.json for a thin module") {
+      !exists(generated, "dagger.json")
+    }
     assertContains(generated.file("main.dang").contents, "type InitModule {", "minimal template did not render the module type")
     assert("generateScope removed an existing file") {
       generated.file("keep.txt").contents == "keep\n"
@@ -240,10 +248,11 @@ type E2e {
       clients: [target],
     )
     let withClient = generated.file("dagger-module.toml").contents
-    let legacyWithClient = generated.file("dagger.json").contents
 
     assertContains(withClient, "lookup-toml-app", "generateScope did not add the requested client")
-    assertContains(legacyWithClient, "lookup-toml-app", "generateScope did not add the requested client to dagger.json")
+    assert("generateScope wrote dagger.json for a thin module") {
+      !exists(generated, "dagger.json")
+    }
 
     let removed = dangSdk.generateScope(
       generated,
@@ -255,11 +264,6 @@ type E2e {
       removed.file("dagger-module.toml").contents,
       "lookup-toml-app",
       "generateScope did not remove an obsolete client",
-    )
-    assertNotContains(
-      removed.file("dagger.json").contents,
-      "lookup-toml-app",
-      "generateScope did not remove an obsolete client from dagger.json",
     )
 
     null

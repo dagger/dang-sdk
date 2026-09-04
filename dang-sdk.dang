@@ -9,6 +9,12 @@ type DangSdk {
   template: String! = "minimal"
 
   """
+  Generate a fat module that includes dagger.json for older engines.
+  By default, generated modules require Dagger v1.0.0-beta.3 or later.
+  """
+  fat: Boolean! = false
+
+  """
   Detect the nearest Dang module that contains Workspace.cwd.
   """
   detectScope(ws: Workspace!): String! {
@@ -82,7 +88,17 @@ type DangSdk {
         )
       }
 
-    ws.withDirectory(".", configured.directory)
+    let generated = if (fat) {
+      ws.withDirectory(".", configured.directory)
+    } else {
+      ws.withFile("dagger-module.toml", configured.tomlFile)
+    }
+
+    if (!fat and exists(generated, "dagger.json")) {
+      generated.withoutFile("dagger.json")
+    } else {
+      generated
+    }
   }
 
   """

@@ -32,15 +32,24 @@ different location with `--path`:
 dagger module init dang --name my-module --path some/dir/my-module
 ```
 
-`module init` writes `dagger-module.toml`, the legacy `dagger.json` fallback,
-and the minimal `main.dang` template. The engine records the scope in
-`dagger.toml`.
+`module init` writes `dagger-module.toml` and the minimal `main.dang` template.
+The engine records the scope in `dagger.toml`. Generated modules require Dagger
+v1.0.0-beta.3 or later by default.
 
 The template is an SDK scope setting. The only current value is `minimal`:
 
 ```sh
 dagger module init dang --name my-module --template minimal
 ```
+
+Use `--fat` to also write `dagger.json` for older engines:
+
+```sh
+dagger module init dang --name my-module --fat
+```
+
+Later generation creates or removes `dagger.json` when the effective `fat`
+setting changes.
 
 ## Generate Scope Files
 
