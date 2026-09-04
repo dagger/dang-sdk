@@ -14,13 +14,25 @@ type ModulesMaxE2e {
     let engineWs = git(engineRepository)
       .branch(engineRef)
       .asWorkspace
-    let source = ws.directory("/", exclude: [".git/**", ".tmp/**"])
+    let sdkSource = ws.directory("/", exclude: [".git/**", ".tmp/**"])
+    let testWorkspace = directory
+      .withDirectory("dang-sdk", sdkSource)
+      .withNewFile(
+        "dagger.toml",
+        "[modules.dang-sdk]\n" +
+        "source = \"dang-sdk\"\n\n" +
+        "[sdks.dang]\n" +
+        "module = \"dang-sdk\"\n",
+      )
     let initialized = engineDev(ws: engineWs)
       .playground
-      .withDirectory("/work", source)
+      .withDirectory("/work", testWorkspace)
       .withWorkdir("/work")
+      .withExec(["git", "init", "--quiet"])
       .withExec([
         "dagger",
+        "-W",
+        ".",
         "-y",
         "module",
         "init",
@@ -39,7 +51,7 @@ type ModulesMaxE2e {
     }
 
     let output = initialized
-      .withExec(["dagger", "-m", modulePath, "call", "hello"])
+      .withExec(["dagger", "-W", ".", "-m", modulePath, "call", "hello"])
       .stdout
       .trimSuffix("\n")
     assert("generated module returned an unexpected result: " + output) {
