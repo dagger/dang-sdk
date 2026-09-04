@@ -15,9 +15,9 @@ type DangSdk {
   fat: Boolean! = false
 
   """
-  Detect the nearest Dang module that contains Workspace.cwd.
+  Find the nearest Dang module root for client generation from Workspace.cwd.
   """
-  detectScope(ws: Workspace!): String! {
+  findClientRoot(ws: Workspace!): String! {
     let found = ws.findUp("dagger-module.toml")
     if (found == null) {
       ""

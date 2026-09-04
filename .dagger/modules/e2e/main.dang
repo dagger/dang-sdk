@@ -152,18 +152,18 @@ type E2e {
   }
 
   """
-  detectScope should return the nearest Dang module root and ignore a module
+  findClientRoot should return the nearest Dang module root and ignore a module
   that uses a different runtime.
   """
-  detectScopeCheck(ws: Workspace!): Void @check {
+  findClientRootCheck(ws: Workspace!): Void @check {
     let nested = ws.withWorkdir(tomlNestedPath)
     let otherRuntime = ws.withWorkdir(nonDangTomlModulePath)
 
-    assert("detectScope returned the wrong Dang scope") {
-      dangSdk.detectScope(nested) == tomlModulePath
+    assert("findClientRoot returned the wrong Dang root") {
+      dangSdk.findClientRoot(nested) == tomlModulePath
     }
-    assert("detectScope returned a scope for another runtime") {
-      dangSdk.detectScope(otherRuntime) == ""
+    assert("findClientRoot returned a root for another runtime") {
+      dangSdk.findClientRoot(otherRuntime) == ""
     }
 
     null
