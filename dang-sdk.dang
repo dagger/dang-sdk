@@ -39,32 +39,25 @@ type DangSdk {
     name: String!,
     clients: [ModuleSource!]!,
   ): Workspace! {
-    let initialized = if (exists(ws, "dagger-module.toml")) {
+    let hasManifest = exists(ws, "dagger-module.toml")
+    let initialized = if (hasManifest) {
       ws
     } else if (!isModule) {
       ws
     } else if (!currentModule.source.exists("templates/" + template)) {
       raise "unknown init template: " + template
     } else {
-      ws
-        .withDirectory(
-          ".",
-          moduleManifest
-            .withName(name)
-            .withLegacyDangRuntime
-            .directory,
-        )
-        .withDirectory(".", renderedTemplate(name, template))
+      ws.withDirectory(".", renderedTemplate(name, template))
     }
 
-    if (!exists(initialized, "dagger-module.toml")) {
+    if (!hasManifest and !isModule) {
       if (clients.length > 0) {
         raise "Dang clients require a Dang module in the scope"
       } else {
         initialized
       }
     } else {
-      withClients(initialized, clients)
+      withClients(initialized, name, clients)
     }
   }
 
@@ -78,17 +71,9 @@ type DangSdk {
   """
   Replace the module dependency set with the complete client set.
   """
-  let withClients(ws: Workspace!, clients: [ModuleSource!]!): Workspace! {
-    let loaded = if (exists(ws, "dagger.json")) {
-      moduleManifest(
-        loadTOML: ws.file("dagger-module.toml"),
-        loadJSON: ws.file("dagger.json"),
-      )
-    } else {
-      moduleManifest(loadTOML: ws.file("dagger-module.toml"))
-    }
+  let withClients(ws: Workspace!, name: String!, clients: [ModuleSource!]!): Workspace! {
     let configured = clients.{{moduleName, kind, sourceRootSubpath, asString, pin}}
-      .reduce(loaded.withoutDependencies) { manifest, client =>
+      .reduce(moduleManifest.withName(name).withLegacyDangRuntime) { manifest, client =>
         manifest.withDependency(
           source: dependencySource(
             ws.cwd,
