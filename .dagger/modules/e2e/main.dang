@@ -97,20 +97,55 @@ type E2e {
       !thin.exists("/work/" + modulePath + "/dagger.json")
     }
 
-    let verified = thin.withExec([
-      "dagger",
-      "-W",
-      ".",
-      "-m",
-      "e2e-suite",
-      "check",
-    ])
+    let verified = thin
+      .withExec([
+        "dagger",
+        "-W",
+        ".",
+        "-m",
+        "e2e-suite",
+        "check",
+      ])
+      .withExec(["dagger", "-W", ".", "-m", modulePath, "-y", "call", "my-generate"])
+      .withExec(["dagger", "-W", ".", "-m", modulePath, "check"])
     let output = verified
-      .withExec(["dagger", "-W", ".", "-m", modulePath, "call", "hello"])
+      .withExec([
+        "dagger",
+        "-W",
+        ".",
+        "-m",
+        modulePath,
+        "call",
+        "my-test-env",
+        "with-exec",
+        "--args",
+        "sh,my-tests.sh",
+        "stdout",
+      ])
       .stdout
       .trimSuffix("\n")
-    assert("generated module returned an unexpected result: " + output) {
-      output == "hello from Dang"
+    assert("generated test returned an unexpected result: " + output) {
+      output == "OK"
+    }
+
+    let chaos = verified.withExec(
+      [
+        "dagger",
+        "-W",
+        ".",
+        "-m",
+        modulePath,
+        "call",
+        "--chaos-mode=true",
+        "my-check",
+      ],
+      expect: ReturnType.ANY,
+    )
+    assert("chaos mode check succeeded") {
+      chaos.exitCode != 0
+    }
+    assert("chaos mode check returned the wrong error") {
+      chaos.stderr.contains("chaos mode!")
     }
 
     null

@@ -192,7 +192,14 @@ type E2e {
     assert("generateScope did not remove dagger.json for a thin module") {
       !exists(generated, "dagger.json")
     }
-    assertContains(generated.file("main.dang").contents, "type InitModule {", "minimal template did not render the module type")
+    let source = generated.file("main.dang").contents
+    assertContains(source, "type InitModule {", "minimal template did not render the module type")
+    assertContains(source, "chaosMode: Boolean! = false", "minimal template did not render chaosMode")
+    assertContains(source, "base: Container! = container", "minimal template did not render base")
+    assertContains(source, "pub myCheck: Void @check", "minimal template did not render myCheck")
+    assertContains(source, "pub myTestEnv(ws: Workspace!): Container!", "minimal template did not render myTestEnv")
+    assertContains(source, "pub myBackend: Service!", "minimal template did not render myBackend")
+    assertContains(source, "pub myGenerate(ws: Workspace!): Changeset! @generate", "minimal template did not render myGenerate")
     assert("generateScope removed an existing file") {
       generated.file("keep.txt").contents == "keep\n"
     }
