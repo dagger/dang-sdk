@@ -3,5 +3,12 @@
   "engineVersion": "v1.0.0-beta.11",
   "sdk": {
     "source": "dang"
-  }
+  },
+  "dependencies": [
+    {
+      "name": "sdk-helpers",
+      "source": "github.com/dagger/sdk-helpers",
+      "pin": "fec4ded81c0565ede1d3bc319d60c985ef95ee84"
+    }
+  ]
 }

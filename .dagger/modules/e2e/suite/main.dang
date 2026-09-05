@@ -163,7 +163,7 @@ type E2e {
       dangSdk.findClientRoot(nested) == tomlModulePath
     }
     assert("findClientRoot returned a root for another runtime") {
-      dangSdk.findClientRoot(otherRuntime) == ""
+      dangSdk.findClientRoot(otherRuntime) == null
     }
 
     null

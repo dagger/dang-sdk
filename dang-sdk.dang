@@ -17,14 +17,14 @@ type DangSdk {
   """
   Find the nearest Dang module root for client generation from Workspace.cwd.
   """
-  findClientRoot(ws: Workspace!): String! {
+  findClientRoot(ws: Workspace!): String {
     let found = ws.findUp("dagger-module.toml")
     if (found == null) {
-      ""
+      null
     } else {
       let base = configDir(found, "dagger-module.toml")
       let runtime = ws.moduleSource("/" + base).sdk.source rescue { err: Error => "" }
-      if (runtime == "dang") { base } else { "" }
+      if (runtime == "dang") { base } else { null }
     }
   }
 
@@ -73,7 +73,7 @@ type DangSdk {
   """
   let generateScopeClients(ws: Workspace!, name: String!, clients: [ModuleSource!]!): Workspace! {
     let configured = clients.{{moduleName, kind, sourceRootSubpath, asString, pin}}
-      .reduce(moduleManifest.withName(name).withLegacyDangRuntime) { manifest, client =>
+      .reduce(sdkHelpers.moduleManifest.withName(name).withLegacyDangRuntime) { manifest, client =>
         manifest.withLegacyRuntimeDependency(
           source: dependencySource(
             ws.cwd,
