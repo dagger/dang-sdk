@@ -1,5 +1,0 @@
-type SkipApp {
-  pub hello: String! {
-    "skip"
-  }
-}
