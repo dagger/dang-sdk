@@ -17,7 +17,7 @@ type E2e {
     let engineWs = git(engineRepository)
       .branch(targetEngineRef)
       .asWorkspace
-    let sdkSource = ws.directory("/", exclude: [".git/**", ".tmp/**"])
+    let sdkSource = ws.directory("/", exclude: [".git", ".git/**", ".tmp/**"])
     let testWorkspace = sdkSource.withNewFile(
       "dagger.toml",
       ```toml
