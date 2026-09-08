@@ -11,9 +11,9 @@ type E2e {
   let modulePath: String! = ".tmp/e2e-module"
 
   """
-  The target engine should initialize, load, and test the development Dang SDK.
+  A target engine holding the development SDK as the workspace `dang` SDK.
   """
-  devSdkCheck(ws: Workspace!): Void @check {
+  let playground(ws: Workspace!): Container! {
     let engineWs = git(engineRepository)
       .branch(targetEngineRef)
       .asWorkspace
@@ -35,11 +35,18 @@ type E2e {
       name = "lookup-toml-app"
       ```,
     )
-    let initialized = engineDev(ws: engineWs)
+    engineDev(ws: engineWs)
       .playground
       .withDirectory("/work", testWorkspace)
       .withWorkdir("/work")
       .withExec(["git", "init", "--quiet"])
+  }
+
+  """
+  The target engine should initialize, load, and test the development Dang SDK.
+  """
+  devSdkCheck(ws: Workspace!): Void @check {
+    let initialized = playground(ws)
       .withExec([
         "dagger",
         "-W",
@@ -119,7 +126,7 @@ type E2e {
         "my-test-env",
         "with-exec",
         "--args",
-        "sh,my-tests.sh",
+        "sh,e2e-module-tests.sh",
         "stdout",
       ])
       .stdout
@@ -146,6 +153,33 @@ type E2e {
     }
     assert("chaos mode check returned the wrong error") {
       chaos.stderr.contains("chaos mode!")
+    }
+
+    null
+  }
+
+  """
+  Two modules from the template should generate side by side.
+
+  A template that writes a fixed file name collides with itself as soon as a
+  workspace holds two of its modules. Mirrors the cross-SDK smoke test: init two
+  modules, wire one as the other's client, then generate from inside the first.
+  Generated changes land where `dagger generate` ran, so both scripts appear
+  there; what matters is that the two modules no longer write the same path.
+  """
+  templateGenerateCheck(ws: Workspace!): Void @check {
+    let generated = playground(ws)
+      .withExec(["dagger", "-W", ".", "-y", "module", "init", "dang", "--name", "my-mod"])
+      .withExec(["dagger", "-W", ".", "-y", "module", "init", "dang", "--name", "my-dep"])
+      .withWorkdir("/work/.dagger/modules/my-mod")
+      .withExec(["dagger", "-y", "module", "client", "add", "dang", "../my-dep"])
+      .withExec(["dagger", "-y", "generate"])
+
+    assert("generate did not write the module's test script") {
+      generated.exists("/work/.dagger/modules/my-mod/my-mod-tests.sh")
+    }
+    assert("generate did not write the client module's test script") {
+      generated.exists("/work/.dagger/modules/my-mod/my-dep-tests.sh")
     }
 
     null
