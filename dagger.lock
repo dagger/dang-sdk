@@ -1,4 +1,6 @@
 [["version","2"]]
+["","git-latest",["github.com/dagger/sdk-helpers"],"refs/tags/v1",[["version","v1"]]]
+["","git-sha",["github.com/dagger/sdk-helpers","refs/tags/v1"],"ea44eba7c5e566aef8c1b0ef73abe76dd6c1e62d"]
 ["","git-sha",["https://github.com/containernetworking/plugins","refs/tags/v1.9.0"],"9b3772e1a7abf93cbb7c6526a28bc0d27b830e02"]
 ["","git-sha",["https://github.com/dagger/dagger","refs/heads/sdk-ux-module-max"],"7e6fc93c86f0bf0eebae8c2c74a249c3b5cc451f"]
 ["","git-sha",["https://github.com/dagger/dagger","sdk-ux-module-max"],"7e6fc93c86f0bf0eebae8c2c74a249c3b5cc451f"]
@@ -8,3 +10,4 @@
 ["","oci-sha",["docker.io/library/busybox:1.38.0"],"sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616"]
 ["","oci-sha",["docker.io/library/golang:1.26-alpine"],"sha256:ce864e7223ac17b1775e6fd0b4c0db580c2eb50e7953a427916379e4b92a1628"]
 ["","oci-sha",["docker.io/tonistiigi/xx:1.2.1"],"sha256:8879a398dedf0aadaacfbd332b29ff2f84bc39ae6d4e9c0a1109db27ac5ba012"]
+["","vanity-url",["https://dagger.io/sdk/helpers"],"https://github.com/dagger/sdk-helpers"]
