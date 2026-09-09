@@ -7,8 +7,7 @@
   "dependencies": [
     {
       "name": "sdk-helpers",
-      "source": "github.com/dagger/sdk-helpers",
-      "pin": "fec4ded81c0565ede1d3bc319d60c985ef95ee84"
+      "source": "github.com/dagger/sdk-helpers@v1"
     }
   ]
 }

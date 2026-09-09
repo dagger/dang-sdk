@@ -14,6 +14,9 @@ type DangSdk {
   """
   fat: Boolean! = false
 
+  """Write selected Git commits as manifest pins."""
+  lock: Boolean! = false
+
   """
   Find the nearest Dang module root for client generation from Workspace.cwd.
   """
@@ -72,68 +75,9 @@ type DangSdk {
   Replace the module dependency set with the complete client set.
   """
   let generateScopeClients(ws: Workspace!, name: String!, clients: [ModuleSource!]!): Workspace! {
-    let configured = clients.{{moduleName, kind, sourceRootSubpath, asString, pin}}
-      .reduce(sdkHelpers.moduleManifest.withName(name).withLegacyDangRuntime) { manifest, client =>
-        manifest.withLegacyRuntimeDependency(
-          source: dependencySource(
-            ws.cwd,
-            client.kind,
-            client.sourceRootSubpath,
-            client.asString,
-          ),
-          name: client.moduleName,
-          pin: client.pin,
-        )
-      }
-
-    let generated = if (fat) {
-      ws.withDirectory(".", configured.directory)
-    } else {
-      ws.withFile("dagger-module.toml", configured.tomlFile)
-    }
-
-    if (!fat and exists(generated, "dagger.json")) {
-      generated.withoutFile("dagger.json")
-    } else {
-      generated
-    }
-  }
-
-  """
-  Return the dependency source to write for a client.
-  """
-  let dependencySource(
-    scopePath: String!,
-    kind: ModuleSourceKind!,
-    sourceRootSubpath: String!,
-    ref: String!,
-  ): String! {
-    if (kind == ModuleSourceKind.GIT_SOURCE) {
-      ref
-    } else {
-      relativePath(scopePath, sourceRootSubpath)
-    }
-  }
-
-  """
-  Return a path from one workspace directory to another.
-  """
-  let relativePath(from: String!, to: String!): String! {
-    relativePathParts(pathParts(from), pathParts(to))
-  }
-
-  let pathParts(path: String!): [String!]! {
-    let normalized = normalizePath(path)
-    if (normalized == ".") { [] } else { normalized.split("/") }
-  }
-
-  let relativePathParts(from: [String!]!, to: [String!]!): String! {
-    if (!from.isEmpty and !to.isEmpty and from.takeFirst.join("") == to.takeFirst.join("")) {
-      relativePathParts(from.dropFirst, to.dropFirst)
-    } else {
-      let relative = (from.map { segment => ".." } + to).join("/")
-      if (relative == "") { "." } else { relative }
-    }
+    clients.reduce(sdkHelpers.moduleManifest.withName(name).withLegacyDangRuntime) { manifest, client =>
+      manifest.withLegacyRuntimeDependency(module: client)
+    }.generate(ws, lock: lock, legacyJson: fat)
   }
 
   """

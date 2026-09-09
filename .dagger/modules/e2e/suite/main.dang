@@ -276,6 +276,42 @@ type E2e {
     null
   }
 
+  """Git pins follow lock; JSON output follows fat."""
+  generateScopePinsCheck(ws: Workspace!): Void @check {
+    let commit = "64645f1967d3dba6fce951dd61ae4acd8d9b0861"
+    let target = moduleSource("github.com/dagger/sdk-helpers@main", refPin: commit)
+    let input = ws.withNewFile(outputRoot + "/pins/keep.txt", "keep").withWorkdir(outputRoot + "/pins")
+    let unlocked = dangSdk(fat: true).generateScope(input, isModule: true, name: "pins", clients: [target])
+    assertNotContains(unlocked.file("dagger-module.toml").contents, "pin =", "default TOML contains a pin")
+    assertNotContains(unlocked.file("dagger.json").contents, "\"pin\":", "default JSON contains a pin")
+    assertContains(unlocked.file("dagger-module.toml").contents, target.asString, "Git source changed")
+    let locked = dangSdk(fat: true, lock: true).generateScope(unlocked, isModule: true, name: "pins", clients: [target])
+    assertContains(locked.file("dagger-module.toml").contents, "pin = \"" + commit + "\"", "TOML lost the selected commit")
+    assertContains(locked.file("dagger.json").contents, "\"pin\": \"" + commit + "\"", "JSON lost the selected commit")
+    let thin = dangSdk.generateScope(locked, isModule: true, name: "pins", clients: [target])
+    assertNotContains(thin.file("dagger-module.toml").contents, "pin =", "disabling lock retained a pin")
+    assert("disabling fat retained JSON") { !exists(thin, "dagger.json") }
+    assert("generation changed cwd") { thin.cwd == input.cwd }
+    assert("generation changed another file") { thin.file("keep.txt").contents == "keep" }
+    let repeated = dangSdk.generateScope(thin, isModule: true, name: "pins", clients: [target])
+    assert("repeated generation changed the workspace") { repeated.changes(thin).isEmpty }
+    null
+  }
+
+  """Local dependencies use original names and paths relative to the manifest."""
+  generateScopeLocalPathCheck(ws: Workspace!): Void @check {
+    let scope = outputRoot + "/local/nested/app"
+    let input = ws.withNewFile(scope + "/keep.txt", "keep").withWorkdir(scope)
+    let target = ws.moduleSource("/" + tomlModulePath).withName("alias")
+    let generated = dangSdk(fat: true, lock: true).generateScope(input, isModule: true, name: "local", clients: [target])
+    let expected = "../../../../fixtures/lookup-toml/app"
+    assertContains(generated.file("dagger-module.toml").contents, "source = " + JSON.encode(expected), "local TOML path is wrong")
+    assertContains(generated.file("dagger.json").contents, "\"source\": " + JSON.encode(expected), "local JSON path is wrong")
+    assertContains(generated.file("dagger-module.toml").contents, "name = \"lookup-toml-app\"", "original name was lost")
+    assertNotContains(generated.file("dagger-module.toml").contents, "pin =", "local dependency has a pin")
+    null
+  }
+
   """
   Generating an existing generated-clean Dang module should not produce
   language-side files today.
