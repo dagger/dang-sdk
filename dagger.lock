@@ -1,6 +1,6 @@
 [["version","2"]]
-["","git-latest",["github.com/dagger/sdk-helpers"],"refs/tags/v1",[["version","v1"]]]
-["","git-sha",["github.com/dagger/sdk-helpers","refs/tags/v1"],"ea44eba7c5e566aef8c1b0ef73abe76dd6c1e62d"]
+["","git-latest",["github.com/dagger/sdk-helpers"],"refs/tags/v1.0.1",[["version","v1"]]]
+["","git-sha",["github.com/dagger/sdk-helpers","refs/tags/v1.0.1"],"d2780115934d74f4bdd1ff4396ba70ba1195507d"]
 ["","git-sha",["https://github.com/containernetworking/plugins","refs/tags/v1.9.0"],"9b3772e1a7abf93cbb7c6526a28bc0d27b830e02"]
 ["","git-sha",["https://github.com/dagger/dagger","refs/heads/sdk-ux-module-max"],"7e6fc93c86f0bf0eebae8c2c74a249c3b5cc451f"]
 ["","git-sha",["https://github.com/dagger/dagger","sdk-ux-module-max"],"7e6fc93c86f0bf0eebae8c2c74a249c3b5cc451f"]
