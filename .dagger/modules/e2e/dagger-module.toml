@@ -6,4 +6,4 @@ engineVersion = "v1.0.0-0"
 
 [[dependencies]]
   name = "engine-dev"
-  source = "github.com/dagger/dagger/.dagger/modules/engine-dev@0d031c08ef3e379c6f4eb7f8f5cad4638a168863"
+  source = "github.com/dagger/dagger/.dagger/modules/engine-dev@v1.0-beta"
