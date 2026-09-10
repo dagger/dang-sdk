@@ -5,7 +5,7 @@ type E2e {
   """
   Git ref used to build the target engine.
   """
-  targetEngineRef: String! = "sdk-ux-module-max"
+  targetEngineRef: String! = "0d031c08ef3e379c6f4eb7f8f5cad4638a168863"
 
   let engineRepository: String! = "https://github.com/dagger/dagger"
   let modulePath: String! = ".tmp/e2e-module"
@@ -15,7 +15,7 @@ type E2e {
   """
   devSdkCheck(ws: Workspace!): Void @check {
     let engineWs = git(engineRepository)
-      .branch(targetEngineRef)
+      .ref(targetEngineRef)
       .asWorkspace
     let sdkSource = ws.directory("/", exclude: [".git/**", ".tmp/**"])
     let testWorkspace = sdkSource.withNewFile(
@@ -102,8 +102,6 @@ type E2e {
         "dagger",
         "-W",
         ".",
-        "-m",
-        "e2e-suite",
         "check",
       ])
       .withExec(["dagger", "-W", ".", "-m", modulePath, "-y", "call", "my-generate"])
