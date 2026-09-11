@@ -73,11 +73,15 @@ type DangSdk {
 
   """
   Replace the module dependency set with the complete client set.
+
+  Other fields of an existing manifest are kept.
   """
   let generateScopeClients(ws: Workspace!, name: String!, clients: [ModuleSource!]!): Workspace! {
-    clients.reduce(sdkHelpers.moduleManifest.withName(name).withLegacyDangRuntime) { manifest, client =>
-      manifest.withLegacyRuntimeDependency(module: client)
-    }.generate(ws, lock: lock, legacyJson: fat)
+    sdkHelpers.loadModuleManifest(ws)
+      .withName(name)
+      .withLegacyDangRuntime
+      .withLegacyRuntimeDependencies(modules: clients)
+      .generate(ws, lock: lock, legacyJson: fat)
   }
 
   """
