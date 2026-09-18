@@ -2,6 +2,8 @@
 Run the Dang SDK end-to-end suite on a development engine.
 """
 type E2e {
+  collections: CollectionsTest! { CollectionsTest() }
+
   """
   Git ref used to build the target engine.
   """

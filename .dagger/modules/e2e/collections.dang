@@ -1,0 +1,60 @@
+type CollectionsTest {
+  """Engine commit with collection projection and base state support."""
+  engineRef: String! = "6fd77279f"
+
+  """SDK generation preserves collection declarations and their runtime state."""
+  run(ws: Workspace!): Void @check {
+    let source = ws.directory("/", exclude: [".git/**", ".tmp/**"])
+    let testWorkspace = source.withNewFile("dagger.toml", ```toml
+      [modules.dang-sdk]
+      source = "."
+      [modules.collections]
+      source = ".dagger/modules/e2e/fixtures/collections"
+      [sdks.dang]
+      module = "dang-sdk"
+      [sdks.dang.scopes.".dagger/modules/e2e/fixtures/collections"]
+      is-module = true
+      name = "collections"
+      ```)
+    let engineWs = git("https://github.com/dagger/dagger").ref(engineRef).asWorkspace
+    let generated = engineDev(ws: engineWs).playground
+      .withDirectory("/work", testWorkspace)
+      .withWorkdir("/work")
+      .withExec(["git", "init", "--quiet"])
+      .withExec(["dagger", "-y", "generate"])
+    let result = generated.withExec(
+      ["dagger", "query", "-m", ".dagger/modules/e2e/fixtures/collections"],
+      stdin: ```graphql
+        { items { subset(keys: ["b"]) {
+          keys
+          list { name }
+          batch {
+            removed
+            change(names: ["b", "d"]) { batch { added removed } }
+            fresh { batch { added removed } }
+          }
+        } } }
+        ```
+    ).stdout
+    let selected = json.withContents(result).field(["items", "subset"])
+    assert("subset keys changed") { selected.field(["keys"]).asArray.length == 1 }
+    assert("list did not use selected keys") {
+      selected.field(["list"]).asArray[0].field(["name"]).asString == "b"
+    }
+    let batch = selected.field(["batch"])
+    assert("subset delta lost the original keys") {
+      batch.field(["removed"]).asArray.length == 2
+    }
+    let changed = batch.field(["change", "batch"])
+    assert("module key changes lost the base") {
+      changed.field(["added"]).asArray[0].asString == "d" and
+      changed.field(["removed"]).asArray.length == 2
+    }
+    let fresh = batch.field(["fresh", "batch"])
+    assert("new collection retained the old base") {
+      fresh.field(["added"]).asArray.length == 0 and
+      fresh.field(["removed"]).asArray.length == 0
+    }
+    null
+  }
+}
