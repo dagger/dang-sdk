@@ -1,0 +1,63 @@
+type CollectionsTest {
+  """Engine commit with collection projection and base state support."""
+  engineRef: String! = "a349dcee151e6d33cb7af902cba1af58c468a0b3"
+
+  """SDK generation preserves collection declarations and their runtime state."""
+  run(ws: Workspace!): Void @check {
+    let source = ws.directory("/", exclude: [".git/**", ".tmp/**"])
+    let testWorkspace = source.withNewFile("dagger.toml", ```toml
+      [modules.dang-sdk]
+      source = "."
+      [modules.collections]
+      source = ".dagger/modules/e2e/fixtures/collections"
+      [sdks.dang]
+      module = "dang-sdk"
+      [sdks.dang.scopes.".dagger/modules/e2e/fixtures/collections"]
+      is-module = true
+      name = "collections"
+      ```)
+    let engineWs = git("https://github.com/dagger/dagger").ref(engineRef).asWorkspace
+    let generated = daggerDev.playground(ws: engineWs)
+      .withDirectory("/work", testWorkspace)
+      .withWorkdir("/work")
+      .withExec(["git", "init", "--quiet"])
+      .withExec(["dagger", "-y", "generate"])
+    let result = generated.withExec(
+      ["dagger", "api", "query", "-m", ".dagger/modules/e2e/fixtures/collections"],
+      stdin: ```graphql
+        { items { subset(keys: ["b"]) {
+          keys
+          list { name }
+          batch {
+            removed
+            change(names: ["b", "d"]) { batch { added removed } }
+            fresh { batch { added removed } }
+          }
+        } } }
+        ```
+    ).stdout
+    let selected = json.withContents(result :: Dagger.JSON!).field(["items", "subset"])
+    assert("subset keys changed") { strings(selected.field(["keys"])) == ["b"] }
+    let items: [{{name: String!}}!]! = JSON.decode(toString(selected.field(["list"]).contents))
+    assert("list did not use selected keys") { items.map { _.name } == ["b"] }
+    let batch = selected.field(["batch"])
+    assert("subset delta lost the original keys") {
+      strings(batch.field(["removed"])) == ["a", "c"]
+    }
+    let changed = batch.field(["change", "batch"])
+    assert("module key changes lost the base") {
+      strings(changed.field(["added"])) == ["d"] and
+      strings(changed.field(["removed"])) == ["a", "c"]
+    }
+    let fresh = batch.field(["fresh", "batch"])
+    assert("new collection retained the old base") {
+      strings(fresh.field(["added"])) == [] and
+      strings(fresh.field(["removed"])) == []
+    }
+    null
+  }
+
+  let strings(value: JSONValue!): [String!]! {
+    JSON.decode(toString(value.contents))
+  }
+}

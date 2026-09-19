@@ -2,6 +2,8 @@
 Run the Dang SDK end-to-end suite on a development engine.
 """
 type E2e {
+  collections: CollectionsTest! { CollectionsTest() }
+
   """
   Git ref used to build the target engine.
   """
@@ -35,8 +37,7 @@ type E2e {
       name = "lookup-toml-app"
       ```,
     )
-    let initialized = engineDev(ws: engineWs)
-      .playground
+    let initialized = daggerDev.playground(ws: engineWs)
       .withDirectory("/work", testWorkspace)
       .withWorkdir("/work")
       .withExec(["git", "init", "--quiet"])
