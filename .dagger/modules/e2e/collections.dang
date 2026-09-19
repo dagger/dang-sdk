@@ -38,11 +38,8 @@ type CollectionsTest {
     ).stdout
     let selected = json.withContents(result :: Dagger.JSON!).field(["items", "subset"])
     assert("subset keys changed") { strings(selected.field(["keys"])) == ["b"] }
-    assert("list did not use selected keys") {
-      selected.field(["list"]).asArray.{{contents}}.map { item =>
-        json.withContents(item.contents).field(["name"]).asString
-      } == ["b"]
-    }
+    let items: [{{name: String!}}!]! = JSON.decode(toString(selected.field(["list"]).contents))
+    assert("list did not use selected keys") { items.map { _.name } == ["b"] }
     let batch = selected.field(["batch"])
     assert("subset delta lost the original keys") {
       strings(batch.field(["removed"])) == ["a", "c"]
@@ -54,13 +51,13 @@ type CollectionsTest {
     }
     let fresh = batch.field(["fresh", "batch"])
     assert("new collection retained the old base") {
-      strings(fresh.field(["added"])).length == 0 and
-      strings(fresh.field(["removed"])).length == 0
+      strings(fresh.field(["added"])) == [] and
+      strings(fresh.field(["removed"])) == []
     }
     null
   }
 
   let strings(value: JSONValue!): [String!]! {
-    value.asArray.{{asString}}.map { item => item.asString }
+    JSON.decode(toString(value.contents))
   }
 }
