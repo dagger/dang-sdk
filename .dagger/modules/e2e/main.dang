@@ -37,8 +37,7 @@ type E2e {
       name = "lookup-toml-app"
       ```,
     )
-    let initialized = engineDev(ws: engineWs)
-      .playground
+    let initialized = daggerDev.playground(ws: engineWs)
       .withDirectory("/work", testWorkspace)
       .withWorkdir("/work")
       .withExec(["git", "init", "--quiet"])
