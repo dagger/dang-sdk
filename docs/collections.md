@@ -26,7 +26,6 @@ type Items @collection {
   removed: [String!]! { selection!.removedKeys }
   change(names: [String!]!): Items! {
     self.names = names
-    self.selection = null
     self
   }
   fresh: Items! { Items(names: ["z"]) }
