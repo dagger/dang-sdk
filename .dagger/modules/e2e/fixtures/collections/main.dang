@@ -1,0 +1,19 @@
+type Collections {
+  items: Items! { Items(names: ["a", "b", "c"]) }
+}
+
+type Items @collection {
+  pub names: [String!]! @keys
+  pub selection: CollectionDelta @delta
+  item(name: String!): Item! @get { Item(name: name) }
+  added: [String!]! { selection!.addedKeys }
+  removed: [String!]! { selection!.removedKeys }
+  change(names: [String!]!): Items! {
+    self.names = names
+    self.selection = null
+    self
+  }
+  fresh: Items! { Items(names: ["z"]) }
+}
+
+type Item { pub name: String! }

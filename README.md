@@ -51,6 +51,9 @@ dagger module init dang --name my-module --fat
 Later generation creates or removes `dagger.json` when the effective `fat`
 setting changes.
 
+See [Collections](docs/collections.md) to write a module with dynamic keys,
+item lookup, batch functions, and key changes.
+
 ## Generate Scope Files
 
 The engine calls `generateScope` for each recorded Dang scope:
